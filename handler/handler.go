@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"jwt-app/auth"
 	"log"
 	"net/http"
@@ -171,6 +173,49 @@ func (h *profileHandler) Refresh(c *gin.Context) {
 	}
 }
 
+func AddLinuxUser1(username, password string) {
+	//Create a new user here and create a new home directory
+	useradd := exec.Command("sh", "-c", "useradd -m "+username)
+	err := useradd.Start()
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	useradd.Wait()
+	//The following two are the ends of the pipe
+	//Linux can use echo "password" | passwd --stdin username
+	//Change the password directly
+	ps := exec.Command("echo", password)
+	grep := exec.Command("passwd", "--stdin", username)
+
+	r, w := io.Pipe() // Create a pipeline
+	defer r.Close()
+	defer w.Close()
+	ps.Stdout = w  // ps writes to one end of the pipe
+	grep.Stdin = r // grep reads from one end of the pipe
+
+	var buffer bytes.Buffer
+	grep.Stdout = &buffer // The output of grep is buffer
+
+	_ = ps.Start()
+	_ = grep.Start()
+	ps.Wait()
+	w.Close()
+	grep.Wait()
+	io.Copy(os.Stdout, &buffer) // buffer copy to system standard output
+}
+
+func AddLinuxUser(username, password string) {
+	//Create a new user here and create a new home directory
+	useradd := exec.Command("sh", "-c", "useradd -m "+username+" -p "+password)
+	err := useradd.Start()
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	useradd.Wait()
+}
+
 func (h *profileHandler) CreateSystemUser(c *gin.Context) {
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
@@ -181,9 +226,11 @@ func (h *profileHandler) CreateSystemUser(c *gin.Context) {
 	username := mapToken["name"]
 	password := mapToken["password"]
 	log.Println(fmt.Sprintf("Create system user, username: %s, password: %s", username, password))
-
-	c.JSON(http.StatusCreated, map[string]string{
-		"success": "true",
+	// AddLinuxUser(username, password)
+	command := fmt.Sprintf("useradd -m " + username + " -p " + password)
+	result := ExecuteMySQLQuery(command)
+	c.JSON(http.StatusCreated, map[string]bool{
+		"success": result,
 	})
 }
 
