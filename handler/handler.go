@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
@@ -407,15 +408,15 @@ func writeKeyToFile(keyBytes []byte, saveFileTo string) error {
 }
 
 func (h *profileHandler) AddDeploymentKey(c *gin.Context) {
-	mapToken := map[string]string{}
-	if err := c.ShouldBindJSON(&mapToken); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
+	// mapToken := map[string]string{}
+	// if err := c.ShouldBindJSON(&mapToken); err != nil {
+	// 	c.JSON(http.StatusUnprocessableEntity, err.Error())
+	// 	return
+	// }
 
-	username := mapToken["name"]
-	password := mapToken["password"]
-	log.Println(fmt.Sprintf("Add SSH key, username: %s, password: %s", username, password))
+	// username := mapToken["name"]
+	// password := mapToken["password"]
+	// log.Println(fmt.Sprintf("Add SSH key, username: %s, password: %s", username, password))
 	////////////////////////////////////////////////////
 	savePrivateFileTo := "./id_rsa_test"
 	savePublicFileTo := "./id_rsa_test.pub"
@@ -458,9 +459,14 @@ func (h *profileHandler) CreateCronJob(c *gin.Context) {
 		return
 	}
 
-	username := mapToken["name"]
-	password := mapToken["password"]
-	log.Println(fmt.Sprintf("Add SSH key, username: %s, password: %s", username, password))
+	cron_title := mapToken["title"]
+	cron_schedule := mapToken["cron_schedule"]
+	cron_job := mapToken["cron_job"]
+	_ = cron_title
+	ExecuteCommand("systemctl enable cron")
+
+	ExecuteCommand("printf \"\n\" >> /etc/crontab")
+	ExecuteCommand("printf \"" + cron_schedule + " root " + cron_job + "\" >> /etc/crontab")
 
 	c.JSON(http.StatusCreated, map[string]bool{
 		"success": true,
@@ -468,15 +474,76 @@ func (h *profileHandler) CreateCronJob(c *gin.Context) {
 }
 
 func (h *profileHandler) AddFirewallRule(c *gin.Context) {
+	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
+	_ = userId
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
-	username := mapToken["name"]
-	password := mapToken["password"]
-	log.Println(fmt.Sprintf("Add SSH key, username: %s, password: %s", username, password))
+	ExecuteCommand("ufw enable")
+
+	f_type := mapToken["type"]
+	f_from_port := mapToken["from_port"]
+	f_end_port := mapToken["end_port"]
+	f_ip_address := mapToken["ip_address"]
+	f_protocol := strings.ToLower(mapToken["protocol"])
+	f_action := strings.ToLower(mapToken["action"])
+
+	if f_type == "1" {
+		fmt.Println("Globally Open Port")
+		nStartPort, err := strconv.Atoi(f_from_port)
+		if err != nil {
+			print("Error: %s", err.Error)
+		}
+		nEndPort, err := strconv.Atoi(f_end_port)
+		if err != nil {
+			print("Error: %s", err.Error)
+		}
+		if nEndPort == 0 {
+			com := "ufw allow " + f_from_port + "/" + f_protocol
+			print(com)
+			ExecuteCommand(com)
+		} else {
+			for i := nStartPort; i <= nEndPort; i++ {
+				com := "ufw allow " + strconv.Itoa(i) + "/" + f_protocol
+				print(com)
+				ExecuteCommand(com)
+			}
+		}
+	} else {
+		fmt.Println("Rich Rule")
+		nStartPort, err := strconv.Atoi(f_from_port)
+		if err != nil {
+			print("Error: %s", err.Error)
+		}
+		nEndPort, err := strconv.Atoi(f_end_port)
+		if err != nil {
+			print("Error: %s", err.Error)
+		}
+		if nEndPort == 0 {
+			com := "ufw " + f_action + " from " + f_ip_address + " port " + f_from_port + " proto " + f_protocol
+			print(com)
+			ExecuteCommand(com)
+		} else {
+			for i := nStartPort; i <= nEndPort; i++ {
+				com := "ufw " + f_action + " from " + f_ip_address + " port " + strconv.Itoa(i) + " proto " + f_protocol
+				print(com)
+				ExecuteCommand(com)
+			}
+		}
+	}
 
 	c.JSON(http.StatusCreated, map[string]bool{
 		"success": true,
