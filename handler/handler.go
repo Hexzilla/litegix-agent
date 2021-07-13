@@ -408,40 +408,44 @@ func writeKeyToFile(keyBytes []byte, saveFileTo string) error {
 }
 
 func (h *profileHandler) AddDeploymentKey(c *gin.Context) {
-	// mapToken := map[string]string{}
-	// if err := c.ShouldBindJSON(&mapToken); err != nil {
-	// 	c.JSON(http.StatusUnprocessableEntity, err.Error())
-	// 	return
-	// }
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 
-	// username := mapToken["name"]
+	username := mapToken["name"]
 	// password := mapToken["password"]
 	// log.Println(fmt.Sprintf("Add SSH key, username: %s, password: %s", username, password))
 	////////////////////////////////////////////////////
-	savePrivateFileTo := "./id_rsa_test"
-	savePublicFileTo := "./id_rsa_test.pub"
-	bitSize := 4096
+	savePrivateFileTo := "/home/" + username + "/.ssh/id_rsa"
+	savePublicFileTo := "/home/" + username + "/.ssh/id_rsa.pub"
+	bitSize := 3072
 
 	privateKey, err := generatePrivateKey(bitSize)
 	if err != nil {
-		log.Fatal(err.Error())
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
 	}
 
 	publicKeyBytes, err := generatePublicKey(&privateKey.PublicKey)
 	if err != nil {
-		log.Fatal(err.Error())
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
 	}
 
 	privateKeyBytes := encodePrivateKeyToPEM(privateKey)
 
 	err = writeKeyToFile(privateKeyBytes, savePrivateFileTo)
 	if err != nil {
-		log.Fatal(err.Error())
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
 	}
 
 	err = writeKeyToFile([]byte(publicKeyBytes), savePublicFileTo)
 	if err != nil {
-		log.Fatal(err.Error())
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
 	}
 
 	myString := string(publicKeyBytes[:])
@@ -453,6 +457,18 @@ func (h *profileHandler) AddDeploymentKey(c *gin.Context) {
 }
 
 func (h *profileHandler) CreateCronJob(c *gin.Context) {
+	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
+	_ = userId
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -463,10 +479,26 @@ func (h *profileHandler) CreateCronJob(c *gin.Context) {
 	cron_schedule := mapToken["cron_schedule"]
 	cron_job := mapToken["cron_job"]
 	_ = cron_title
-	ExecuteCommand("systemctl enable cron")
 
-	ExecuteCommand("printf \"\n\" >> /etc/crontab")
-	ExecuteCommand("printf \"" + cron_schedule + " root " + cron_job + "\" >> /etc/crontab")
+	if !ExecuteCommand("systemctl enable cron") {
+		c.JSON(http.StatusCreated, map[string]bool{
+			"success": false,
+		})
+		return
+	}
+
+	if !ExecuteCommand("printf \"\n\" >> /etc/crontab") {
+		c.JSON(http.StatusCreated, map[string]bool{
+			"success": false,
+		})
+		return
+	}
+	if !ExecuteCommand("printf \"" + cron_schedule + " root " + cron_job + "\" >> /etc/crontab") {
+		c.JSON(http.StatusCreated, map[string]bool{
+			"success": false,
+		})
+		return
+	}
 
 	c.JSON(http.StatusCreated, map[string]bool{
 		"success": true,
@@ -492,7 +524,13 @@ func (h *profileHandler) AddFirewallRule(c *gin.Context) {
 		return
 	}
 
-	ExecuteCommand("ufw enable")
+	result := true
+	if !ExecuteCommand("ufw enable") {
+		c.JSON(http.StatusCreated, map[string]bool{
+			"success": false,
+		})
+		return
+	}
 
 	f_type := mapToken["type"]
 	f_from_port := mapToken["from_port"]
@@ -506,46 +544,61 @@ func (h *profileHandler) AddFirewallRule(c *gin.Context) {
 		nStartPort, err := strconv.Atoi(f_from_port)
 		if err != nil {
 			print("Error: %s", err.Error)
+			result = false
 		}
 		nEndPort, err := strconv.Atoi(f_end_port)
 		if err != nil {
 			print("Error: %s", err.Error)
+			result = false
 		}
-		if nEndPort == 0 {
-			com := "ufw allow " + f_from_port + "/" + f_protocol
-			print(com)
-			ExecuteCommand(com)
-		} else {
-			for i := nStartPort; i <= nEndPort; i++ {
-				com := "ufw allow " + strconv.Itoa(i) + "/" + f_protocol
+		if result {
+			if nEndPort == 0 {
+				com := "ufw allow " + f_from_port + "/" + f_protocol
 				print(com)
-				ExecuteCommand(com)
+				result = ExecuteCommand(com)
+			} else {
+				for i := nStartPort; i <= nEndPort; i++ {
+					com := "ufw allow " + strconv.Itoa(i) + "/" + f_protocol
+					print(com)
+					result = ExecuteCommand(com)
+					if !result {
+						break
+					}
+				}
 			}
 		}
+
 	} else {
 		fmt.Println("Rich Rule")
 		nStartPort, err := strconv.Atoi(f_from_port)
 		if err != nil {
 			print("Error: %s", err.Error)
+			result = false
 		}
 		nEndPort, err := strconv.Atoi(f_end_port)
 		if err != nil {
 			print("Error: %s", err.Error)
+			result = false
 		}
-		if nEndPort == 0 {
-			com := "ufw " + f_action + " from " + f_ip_address + " port " + f_from_port + " proto " + f_protocol
-			print(com)
-			ExecuteCommand(com)
-		} else {
-			for i := nStartPort; i <= nEndPort; i++ {
-				com := "ufw " + f_action + " from " + f_ip_address + " port " + strconv.Itoa(i) + " proto " + f_protocol
+		if result {
+			if nEndPort == 0 {
+				com := "ufw " + f_action + " from " + f_ip_address + " port " + f_from_port + " proto " + f_protocol
 				print(com)
-				ExecuteCommand(com)
+				result = ExecuteCommand(com)
+			} else {
+				for i := nStartPort; i <= nEndPort; i++ {
+					com := "ufw " + f_action + " from " + f_ip_address + " port " + strconv.Itoa(i) + " proto " + f_protocol
+					print(com)
+					result = ExecuteCommand(com)
+					if !result {
+						break
+					}
+				}
 			}
 		}
 	}
 
 	c.JSON(http.StatusCreated, map[string]bool{
-		"success": true,
+		"success": result,
 	})
 }
