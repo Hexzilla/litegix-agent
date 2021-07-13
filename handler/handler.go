@@ -236,7 +236,7 @@ func (h *profileHandler) CreateSystemUser(c *gin.Context) {
 	log.Println(fmt.Sprintf("Create system user, username: %s, password: %s", username, password))
 	// AddLinuxUser(username, password)
 	command := fmt.Sprintf("useradd -m " + username + " -p " + password)
-	result := ExecuteMySQLQuery(command)
+	result := ExecuteCommand(command)
 	c.JSON(http.StatusCreated, map[string]bool{
 		"success": result,
 	})
@@ -436,6 +436,7 @@ func (h *profileHandler) AddDeploymentKey(c *gin.Context) {
 
 	privateKeyBytes := encodePrivateKeyToPEM(privateKey)
 
+	ExecuteCommand("mkdir /home/" + username + "/.ssh")
 	err = writeKeyToFile(privateKeyBytes, savePrivateFileTo)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
