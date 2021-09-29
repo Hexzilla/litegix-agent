@@ -2,8 +2,8 @@
 
 
 # Constants
-EASY_CLOUD_URL="http://localhost:3600"
-INSTALL_STATE_URL="$EASY_CLOUD_URL/api/installation/status"
+LITEGIX_URL="http://localhost:3600"
+INSTALL_STATE_URL="$LITEGIX_URL/api/installation/status"
 INSTALL_PACKAGE="curl git wget expect nano build-essential openssl zip unzip make net-tools bc mariadb-server redis-server python-setuptools perl fail2ban augeas-tools libaugeas0 augeas-lenses firewalld acl memcached beanstalkd passwd unattended-upgrades postfix nodejs jq"
 
 # Initialize
@@ -86,7 +86,7 @@ install_fail2Ban
 send_state "mariadb"
 function install_mariadb {
   mkdir -p /tmp/lens
-  curl --ipv4 $EASY_CLOUD_URL/files/lenses/augeas-mysql.aug --create-dirs -o /tmp/lens/mysql.aug 
+  curl --ipv4 $LITEGIX_URL/files/lenses/augeas-mysql.aug --create-dirs -o /tmp/lens/mysql.aug 
 
   ROOTPASS=$(get_rand_string)
 

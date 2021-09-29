@@ -12,4 +12,6 @@ require (
 	github.com/myesui/uuid v1.0.0 // indirect
 	github.com/twinj/uuid v1.0.0
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97 // indirect
+	gopkg.in/gcfg.v1 v1.2.3
+	gopkg.in/warnings.v0 v0.1.2 // indirect
 )

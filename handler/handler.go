@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/ssh"
+	"gopkg.in/gcfg.v1"
 )
 
 // ProfileHandler struct
@@ -149,7 +151,7 @@ func (h *profileHandler) Refresh(c *gin.Context) {
 			return
 		}
 		userId, roleOk := claims["user_id"].(string)
-		if roleOk == false {
+		if !roleOk {
 			c.JSON(http.StatusUnprocessableEntity, "unauthorized")
 			return
 		}
@@ -259,7 +261,22 @@ func ExecuteCommand(command string) bool {
 
 func ExecuteMySQLQuery(query string) bool {
 	// It should be read from setting file.
-	rootPassword := "android1987"
+	// rootPassword := "android1987"
+	rootPassword := "android19871111"
+
+	mysqlConf := struct {
+		Client struct {
+			User     string
+			Password string
+		}
+	}{}
+
+	err := gcfg.ReadFileInto(&mysqlConf, "/etc/mysql/conf.d/root.cnf")
+	if err != nil {
+		log.Fatalf("Failed to parse gcfg data: %s", err)
+	}
+	// toml.DecodeFile("/etc/mysql/conf.d/root.cnf", mysqlConf)
+	rootPassword = mysqlConf.Client.Password
 
 	// mysql -uroot -p${rootpasswd} -e
 	command := fmt.Sprintf("mysql -uroot -p%s -e \"%s\"", rootPassword, query)
@@ -306,7 +323,14 @@ func (h *profileHandler) CreateDatabaseUser(c *gin.Context) {
 	log.Println(query)
 	result = ExecuteMySQLQuery(query)
 
-	query = fmt.Sprintf("FLUSH PRIVILEGES;")
+	if !result {
+		c.JSON(http.StatusCreated, map[string]bool{
+			"success": result,
+		})
+		return
+	}
+
+	query = "FLUSH PRIVILEGES;"
 	log.Println(query)
 	result = ExecuteMySQLQuery(query)
 
@@ -322,29 +346,102 @@ func (h *profileHandler) ChangePhpVersion(c *gin.Context) {
 		return
 	}
 
-	username := mapToken["name"]
-	password := mapToken["password"]
-	log.Println(fmt.Sprintf("Change PHP version, username: %s, password: %s", username, password))
+	php_version := mapToken["php_version"]
+	log.Println(fmt.Sprintf("Change PHP version, php_version: %s", php_version))
+
+	result := ExecuteCommand("update-alternatives --set php /usr/bin/" + php_version)
+	if !result {
+		c.JSON(http.StatusCreated, map[string]bool{
+			"success": false,
+		})
+		return
+	}
 
 	c.JSON(http.StatusCreated, map[string]bool{
 		"success": true,
 	})
 }
 
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+	return false
+}
+
 func (h *profileHandler) AddSSHKey(c *gin.Context) {
+	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
+	_ = userId
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
-	// username := mapToken["username"]
-	// label := mapToken["label"]
-	// key := mapToken["key"]
+	is_vaulted, _ := strconv.ParseBool(mapToken["is_vaulted"])
+	username := mapToken["user"]
+	_ = mapToken["label"]
 
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": true,
-	})
+	bitSize := 3072
+	if is_vaulted {
+		privateKey, err := generatePrivateKey(bitSize)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+
+		publicKeyBytes, err := generatePublicKey(&privateKey.PublicKey)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+
+		privateKeyBytes := encodePrivateKeyToPEM(privateKey)
+
+		stringPrivate := string(privateKeyBytes[:])
+		stringPublic := string(publicKeyBytes[:])
+
+		if !exists("/home/" + username + "/.ssh") {
+			ExecuteCommand("mkdir /home/" + username + "/.ssh")
+		}
+
+		ExecuteCommand("echo '" + stringPublic + "' >> /home/" + username + "/.ssh/authorized_keys")
+		fmt.Println("echo '" + stringPublic + "' >> /home/" + username + "/.ssh/authorized_keys")
+		c.JSON(http.StatusCreated, map[string]string{
+			"success":     strconv.FormatBool(true),
+			"private_key": stringPrivate,
+		})
+	} else {
+		public_key := mapToken["public_key"]
+
+		if !exists("/home/" + username + "/.ssh") {
+			ExecuteCommand("mkdir /home/" + username + "/.ssh")
+		}
+
+		ExecuteCommand("echo '" + public_key + "' >> /home/" + username + "/.ssh/authorized_keys")
+		fmt.Println("echo '" + public_key + "' >> /home/" + username + "/.ssh/authorized_keys")
+		c.JSON(http.StatusCreated, map[string]string{
+			"success": strconv.FormatBool(true),
+		})
+	}
+
+	// c.JSON(http.StatusCreated, map[string]string{
+	// 	"success": strconv.FormatBool(true),
+	// })
 }
 
 func generatePrivateKey(bitSize int) (*rsa.PrivateKey, error) {
@@ -408,13 +505,25 @@ func writeKeyToFile(keyBytes []byte, saveFileTo string) error {
 }
 
 func (h *profileHandler) AddDeploymentKey(c *gin.Context) {
+	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
+	_ = userId
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
-	username := mapToken["name"]
+	username := mapToken["user"]
 	// password := mapToken["password"]
 	// log.Println(fmt.Sprintf("Add SSH key, username: %s, password: %s", username, password))
 	////////////////////////////////////////////////////
@@ -436,7 +545,10 @@ func (h *profileHandler) AddDeploymentKey(c *gin.Context) {
 
 	privateKeyBytes := encodePrivateKeyToPEM(privateKey)
 
-	ExecuteCommand("mkdir /home/" + username + "/.ssh")
+	if !exists("/home/" + username + "/.ssh") {
+		ExecuteCommand("mkdir /home/" + username + "/.ssh")
+	}
+
 	err = writeKeyToFile(privateKeyBytes, savePrivateFileTo)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -499,6 +611,84 @@ func (h *profileHandler) CreateCronJob(c *gin.Context) {
 			"success": false,
 		})
 		return
+	}
+
+	c.JSON(http.StatusCreated, map[string]bool{
+		"success": true,
+	})
+}
+
+func (h *profileHandler) CreateSuperVisor(c *gin.Context) {
+	// should install
+	// apt-get install supervisor
+	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
+	_ = userId
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	job_name := mapToken["job_name"]
+	username := mapToken["user"]
+	auto_restart, _ := strconv.ParseBool(mapToken["auto_restart"])
+	auto_start, _ := strconv.ParseBool(mapToken["auto_start"])
+	num_procs, _ := strconv.Atoi(mapToken["num_procs"])
+	vendor_binary := mapToken["vendor_binary"]
+	directory := mapToken["directory"]
+	command := mapToken["command"]
+
+	if job_name == "" || username == "" || num_procs <= 0 || (vendor_binary == "" && command == "") {
+		c.JSON(http.StatusCreated, map[string]bool{
+			"success": false,
+		})
+		return
+	}
+
+	if !ExecuteCommand("service supervisor restart") {
+		c.JSON(http.StatusCreated, map[string]bool{
+			"success": false,
+		})
+		return
+	}
+
+	confFilePath := "/etc/supervisor/conf.d/" + job_name + ".conf"
+	var confContent string
+	if vendor_binary != "" {
+		confContent = "[program:" + job_name + "_vendor]\n" +
+			"command=" + vendor_binary + "\n" +
+			"user=" + username + "\n" +
+			"autostart=" + strconv.FormatBool(auto_start) + "\n" +
+			"autorestart=" + strconv.FormatBool(auto_restart) + "\n" +
+			"numprocs=" + strconv.Itoa(num_procs) + "\n" +
+			"directory=" + directory + "\n"
+		if !ExecuteCommand("echo '" + confContent + "' >> " + confFilePath) {
+			c.JSON(http.StatusCreated, map[string]bool{
+				"success": false,
+			})
+			return
+		}
+	}
+
+	if command != "" {
+		confContent = "[program:" + job_name + "_command]\n" +
+			"command=" + command + "\n"
+		if !ExecuteCommand("echo '" + confContent + "' >> " + confFilePath) {
+			c.JSON(http.StatusCreated, map[string]bool{
+				"success": false,
+			})
+			return
+		}
 	}
 
 	c.JSON(http.StatusCreated, map[string]bool{
@@ -601,5 +791,241 @@ func (h *profileHandler) AddFirewallRule(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, map[string]bool{
 		"success": result,
+	})
+}
+
+func ExecuteCommand_WithResult(command string) (string, error) {
+
+	// cmd := exec.Command("sh", "-c", "systemctl list-units --all --type=service --no-pager | grep -i 'redis'")
+	// cmd := exec.Command("sh", "-c", "systemctl status redis-server | grep 'Main PID:'")
+	// cmd := exec.Command("sh", "-c", "dpkg -s redis-server | grep Version")
+	// cmd := exec.Command("sh", "-c", "pidstat -p 864 -r | grep 864")
+	// cmd := exec.Command("sh", "-c", "pidstat -p 864 -u | grep 864")
+	cmd := exec.Command("sh", "-c", command)
+	stdoutStderr, err := cmd.CombinedOutput()
+
+	if err != nil {
+		return "", err
+	}
+
+	var strReturn = strings.TrimSpace(string(stdoutStderr))
+	return strReturn, err
+}
+
+func (h *profileHandler) ViewServices(c *gin.Context) {
+	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
+	_ = userId
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	// if !ExecuteCommand("ufw enable") {
+	// 	c.JSON(http.StatusCreated, map[string]bool{
+	// 		"success": false,
+	// 	})
+	// 	return
+	// }
+
+	// f_type := mapToken["type"]
+	// f_from_port := mapToken["from_port"]
+	// f_end_port := mapToken["end_port"]
+	// f_ip_address := mapToken["ip_address"]
+	// f_protocol := strings.ToLower(mapToken["protocol"])
+	// f_action := strings.ToLower(mapToken["action"])
+	type StructService struct {
+		Process string `json:"process"`
+		Name    string `json:"name"`
+		Version string `json:"version"`
+		State   string `json:"state"`
+		Cpu     string `json:"cpu"`
+		Mem     string `json:"mem"`
+	}
+
+	var serviceArray [4]StructService
+	var processName string
+	var processID string
+
+	// apache
+	nIndex := 0
+	serviceArray[nIndex].Name = "HTTPD/APACHE"
+	strTemp, _ := ExecuteCommand_WithResult("systemctl list-units --all --type=service --no-pager | grep -i 'apache'")
+	if strTemp != "" {
+		arrayStringTemp := strings.Fields(strTemp)
+		serviceArray[nIndex].Process = strings.ReplaceAll(arrayStringTemp[0], ".service", "")
+		serviceArray[nIndex].State = arrayStringTemp[3]
+		processName = serviceArray[nIndex].Process
+
+		strTemp, _ = ExecuteCommand_WithResult("dpkg -s " + processName + " | grep Version")
+		if strTemp != "" {
+			serviceArray[nIndex].Version = strings.ReplaceAll(strTemp, "Version: ", "")
+		}
+
+		if arrayStringTemp[3] == "running" {
+			strTemp, _ = ExecuteCommand_WithResult("systemctl status " + processName + " | grep 'Main PID:'")
+			if strTemp != "" {
+				arrayStringTemp = strings.Fields(strings.ReplaceAll(strTemp, "Main PID: ", ""))
+				processID = arrayStringTemp[0]
+			}
+
+			if processID != "" {
+				strTemp, _ = ExecuteCommand_WithResult("pidstat -u | grep " + processID)
+				if strTemp != "" {
+					arrayStringTemp = strings.Fields(strTemp)
+					serviceArray[nIndex].Cpu = arrayStringTemp[7]
+				}
+			}
+
+			if processID != "" {
+				strTemp, _ = ExecuteCommand_WithResult("pidstat -r | grep " + processID)
+				if strTemp != "" {
+					arrayStringTemp = strings.Fields(strTemp)
+					serviceArray[nIndex].Mem = arrayStringTemp[7]
+				}
+			}
+		}
+	}
+
+	// mariadb
+	// should change mariadb-server in getting pid
+	processID = ""
+	nIndex++
+	serviceArray[nIndex].Name = "MARIADB"
+	strTemp, _ = ExecuteCommand_WithResult("systemctl list-units --all --type=service --no-pager | grep -i 'mariadb'")
+	if strTemp != "" {
+		arrayStringTemp := strings.Fields(strTemp)
+		serviceArray[nIndex].Process = strings.ReplaceAll(arrayStringTemp[0], ".service", "")
+		serviceArray[nIndex].State = arrayStringTemp[3]
+		processName = serviceArray[nIndex].Process
+
+		strTemp, _ = ExecuteCommand_WithResult("dpkg -s mariadb-server | grep Version")
+		if strTemp != "" {
+			serviceArray[nIndex].Version = strings.ReplaceAll(strTemp, "Version: ", "")
+		}
+
+		if arrayStringTemp[3] == "running" {
+			strTemp, _ = ExecuteCommand_WithResult("systemctl status " + processName + " | grep 'Main PID:'")
+			if strTemp != "" {
+				arrayStringTemp = strings.Fields(strings.ReplaceAll(strTemp, "Main PID: ", ""))
+				processID = arrayStringTemp[0]
+			}
+
+			if processID != "" {
+				strTemp, _ = ExecuteCommand_WithResult("pidstat -u | grep " + processID)
+				if strTemp != "" {
+					arrayStringTemp = strings.Fields(strTemp)
+					serviceArray[nIndex].Cpu = arrayStringTemp[7]
+				}
+			}
+
+			if processID != "" {
+				strTemp, _ = ExecuteCommand_WithResult("pidstat -r | grep " + processID)
+				if strTemp != "" {
+					arrayStringTemp = strings.Fields(strTemp)
+					serviceArray[nIndex].Mem = arrayStringTemp[7]
+				}
+			}
+		}
+	}
+
+	// redis
+	processID = ""
+	nIndex++
+	serviceArray[nIndex].Name = "REDIS"
+	strTemp, _ = ExecuteCommand_WithResult("systemctl list-units --all --type=service --no-pager | grep -i 'redis'")
+	if strTemp != "" {
+		arrayStringTemp := strings.Fields(strTemp)
+		serviceArray[nIndex].Process = strings.ReplaceAll(arrayStringTemp[0], ".service", "")
+		serviceArray[nIndex].State = arrayStringTemp[3]
+		processName = serviceArray[nIndex].Process
+
+		strTemp, _ = ExecuteCommand_WithResult("dpkg -s " + processName + " | grep Version")
+		if strTemp != "" {
+			serviceArray[nIndex].Version = strings.ReplaceAll(strTemp, "Version: ", "")
+		}
+
+		if arrayStringTemp[3] == "running" {
+			strTemp, _ = ExecuteCommand_WithResult("systemctl status " + processName + " | grep 'Main PID:'")
+			if strTemp != "" {
+				arrayStringTemp = strings.Fields(strings.ReplaceAll(strTemp, "Main PID: ", ""))
+				processID = arrayStringTemp[0]
+			}
+
+			if processID != "" {
+				strTemp, _ = ExecuteCommand_WithResult("pidstat -u | grep " + processID)
+				if strTemp != "" {
+					arrayStringTemp = strings.Fields(strTemp)
+					serviceArray[nIndex].Cpu = arrayStringTemp[7]
+				}
+			}
+
+			if processID != "" {
+				strTemp, _ = ExecuteCommand_WithResult("pidstat -r | grep " + processID)
+				if strTemp != "" {
+					arrayStringTemp = strings.Fields(strTemp)
+					serviceArray[nIndex].Mem = arrayStringTemp[7]
+				}
+			}
+		}
+	}
+
+	// supervisor
+	processID = ""
+	nIndex++
+	serviceArray[nIndex].Name = "SUPERVISOR"
+	strTemp, _ = ExecuteCommand_WithResult("systemctl list-units --all --type=service --no-pager | grep -i 'supervisor'")
+	if strTemp != "" {
+		arrayStringTemp := strings.Fields(strTemp)
+		serviceArray[nIndex].Process = strings.ReplaceAll(arrayStringTemp[0], ".service", "")
+		serviceArray[nIndex].State = arrayStringTemp[3]
+		processName = serviceArray[nIndex].Process
+
+		strTemp, _ = ExecuteCommand_WithResult("dpkg -s " + processName + " | grep Version")
+		if strTemp != "" {
+			serviceArray[nIndex].Version = strings.ReplaceAll(strTemp, "Version: ", "")
+		}
+
+		if arrayStringTemp[3] == "running" {
+			strTemp, _ = ExecuteCommand_WithResult("systemctl status " + processName + " | grep 'Main PID:'")
+			if strTemp != "" {
+				arrayStringTemp = strings.Fields(strings.ReplaceAll(strTemp, "Main PID: ", ""))
+				processID = arrayStringTemp[0]
+			}
+
+			if processID != "" {
+				strTemp, _ = ExecuteCommand_WithResult("pidstat -u | grep " + processID)
+				if strTemp != "" {
+					arrayStringTemp = strings.Fields(strTemp)
+					serviceArray[nIndex].Cpu = arrayStringTemp[7]
+				}
+			}
+
+			if processID != "" {
+				strTemp, _ = ExecuteCommand_WithResult("pidstat -r | grep " + processID)
+				if strTemp != "" {
+					arrayStringTemp = strings.Fields(strTemp)
+					serviceArray[nIndex].Mem = arrayStringTemp[7]
+				}
+			}
+		}
+	}
+
+	services, _ := json.Marshal(serviceArray)
+
+	c.JSON(http.StatusCreated, map[string]string{
+		"success":  "true",
+		"services": string(services),
+		// "temp": strTemp,
 	})
 }
