@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	"jwt-app/auth"
+	"litegix-agent/auth"
 	"net/http"
 )
 

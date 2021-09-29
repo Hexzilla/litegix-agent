@@ -1,4 +1,4 @@
-module jwt-app
+module litegix-agent
 
 go 1.13
 

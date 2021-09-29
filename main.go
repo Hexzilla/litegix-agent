@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"jwt-app/auth"
-	handlers "jwt-app/handler"
-	"jwt-app/middleware"
+	"litegix-agent/auth"
+	handlers "litegix-agent/handler"
+	"litegix-agent/middleware"
 	"log"
 	"net/http"
 	"os"
@@ -32,7 +32,8 @@ func NewRedisDB(host, port, password string) *redis.Client {
 }
 
 func main() {
-
+	gin.SetMode(gin.ReleaseMode)
+	
 	appAddr := ":" + os.Getenv("PORT")
 
 	//redis details

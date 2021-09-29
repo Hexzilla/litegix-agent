@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"jwt-app/auth"
+	"litegix-agent/auth"
 	"log"
 	"net/http"
 	"os"
