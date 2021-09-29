@@ -1,0 +1,140 @@
+#!/bin/bash
+#
+# Owned by RunCloud
+# Usage without permission is prohibited
+
+ACTION=$1
+GIT=$2
+TARGET=$3
+BRANCH=$4
+GITUSER=$5
+KEY=${GITUSER}_rsa
+HOSTSERVER=`echo $GIT | cut -f2 -d @ | cut -f1 -d :`
+SSHHELPERPATH=$6
+
+if [ ! -n "$(grep "^$HOSTSERVER " ~/.ssh/known_hosts)" ]; then ssh-keyscan $HOSTSERVER >> ~/.ssh/known_hosts 2>/dev/null; fi
+
+echo "#!/bin/bash
+ssh -o PreferredAuthentications=publickey -i /opt/RunCloud/.ssh/$KEY \"\$@\"" > $SSHHELPERPATH
+chmod +x $SSHHELPERPATH
+
+export GIT_SSH="$SSHHELPERPATH"
+
+function sshKeyExists {
+    cmd=`ls /opt/RunCloud/.ssh 2> /dev/null | grep $KEY`
+
+    if [[ $? -eq 0 ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+function sshConfigExists {
+    cmd=`grep $KEY ~/.ssh/config 1>/dev/null 2>/dev/null`
+
+    if [[ $? -eq 0 ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+function isGitDir {
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+
+
+if  ! sshKeyExists; then
+    exit 3
+fi
+
+# if ! sshConfigExists; then
+#     exit 4
+# fi
+
+cd $TARGET &> /dev/null
+
+if [[ $? != 0 ]]; then
+    mkdir -p $TARGET
+fi
+
+
+
+if [[ $ACTION == 'clone' ]]; then
+    if ! isGitDir; then
+        if [ "$(ls -A $TARGET)" ]; then
+            rm -rf $TARGET
+            mkdir -p $TARGET
+            chmod 755 $TARGET
+            chown -R $GITUSER:$GITUSER $TARGET
+        fi
+
+        git clone --depth 1 --no-single-branch $GIT $TARGET -b $BRANCH
+        GITSTATUS=$?
+        if [[ $GITSTATUS -eq 128 ]]; then
+            mkdir $TARGET
+            chmod 755 $TARGET
+        fi
+        exit $GITSTATUS
+    elif [[ $(git config --get remote.origin.url) != "$GIT" ]]; then
+        exit 5
+    else
+        currentBranch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$currentBranch" != "$BRANCH" ]; then
+            echo "$BRANCH"
+            git checkout $BRANCH
+        fi
+
+        git pull
+        exit $?
+    fi
+elif [[ $ACTION == 'pull' ]]; then
+    if  ! isGitDir; then
+        exit 7
+    fi
+
+    if [[ $(git config --get remote.origin.url) != "$GIT" ]]; then
+        exit 5
+    else
+        currentBranch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$currentBranch" != "$BRANCH" ]; then
+            echo "$BRANCH"
+            git checkout $BRANCH
+        fi
+
+        OLDCOMMITRC=`git rev-parse HEAD`
+        currentBranch=$(git rev-parse --abbrev-ref HEAD)
+        git fetch
+        ORIGINLATESTCOMMIT=`git rev-parse origin/$currentBranch`
+
+        # kalau HEAD sama dgn origin, tak payah pull
+        if [[ "$ORIGINLATESTCOMMIT" == "$OLDCOMMITRC" ]]; then
+            exit 8
+        fi
+
+        git merge
+        exit $?
+    fi
+elif [[ $ACTION == 'changebranch' ]]; then
+    if [[ $(git config --get remote.origin.url) != "$GIT" ]]; then
+        exit 5
+    else
+        currentBranch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$currentBranch" != "$BRANCH" ]; then
+            git fetch origin
+            git checkout $BRANCH
+            if [[ $? != 0 ]]; then
+                exit 6
+            fi
+            exit 0
+        fi
+        exit 0
+    fi
+fi

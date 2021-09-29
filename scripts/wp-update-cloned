@@ -1,0 +1,35 @@
+#!/bin/bash
+##
+# Owned by RunCloud
+# Usage without permission is prohibited
+
+PHPVERSION=${1}
+WORDPRESSPATH=${2}
+HTTPPROTO=${3}
+DBNAME=${4}
+DBUSER=${5}
+DBPASSWORD=${6}
+DOMAINNAME=${7}
+WEBAPPID=${8}
+HUBAPIKEY=${9}
+HUBAPISECRET=${10}
+RUNCLOUD_HUB_BYPASS=${11}
+
+
+PHPLOCATION="/RunCloud/Packages/${PHPVERSION}/bin/php"
+WPCLIPATH="/RunCloud/Packages/RunCloudAgent/bin/wp-cli"
+
+if [[ $PHPVERSION == lsphp* ]]; then
+    PHPLOCATION="/usr/local/lsws/${PHPVERSION}/bin/php"
+fi
+
+touch $WORDPRESSPATH/wp-content/$RUNCLOUD_HUB_BYPASS
+
+$PHPLOCATION $WPCLIPATH config set DB_NAME $DBNAME --path=$WORDPRESSPATH
+$PHPLOCATION $WPCLIPATH config set DB_USER $DBUSER --path=$WORDPRESSPATH
+$PHPLOCATION $WPCLIPATH config set DB_PASSWORD $DBPASSWORD --path=$WORDPRESSPATH
+$PHPLOCATION $WPCLIPATH option update siteurl $HTTPPROTO://$DOMAINNAME --path=$WORDPRESSPATH
+$PHPLOCATION $WPCLIPATH option update home $HTTPPROTO://$DOMAINNAME --path=$WORDPRESSPATH
+$PHPLOCATION $WPCLIPATH runcloud-hub install $HUBAPIKEY $HUBAPISECRET $WEBAPPID --path=$WORDPRESSPATH
+$PHPLOCATION $WPCLIPATH runcloud-hub rcapi-push --path=$WORDPRESSPATH
+
