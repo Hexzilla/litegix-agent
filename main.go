@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v7"
 
 	"litegix-agent/auth"
 	handlers "litegix-agent/handler"
@@ -19,15 +18,6 @@ import (
 
 func init() {
 
-}
-
-func NewRedisDB(host, port, password string) *redis.Client {
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     host + ":" + port,
-		Password: password,
-		DB:       0,
-	})
-	return redisClient
 }
 
 func loadConfiguration(file string) handlers.Config {
