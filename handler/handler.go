@@ -41,6 +41,11 @@ type ProfileHandler struct {
 	config Config
 }
 
+type Error struct {
+	success bool
+	message string
+}
+
 func NewHandler(rd auth.AuthInterface, tk auth.TokenInterface, config Config) *ProfileHandler {
 	return &ProfileHandler{rd, tk, config}
 }
@@ -384,25 +389,49 @@ func exists(path string) bool {
 }
 
 func (h *ProfileHandler) AddSSHKey(c *gin.Context) {
-	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
-	_ = userId
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
-	is_vaulted, _ := strconv.ParseBool(mapToken["is_vaulted"])
+	username := mapToken["user"]
+	public_key := mapToken["public_key"]
+	if len(username) <= 0 || len(public_key) <= 0 {
+		c.JSON(http.StatusUnprocessableEntity, "Invalid params")
+		return
+	}
+	log.Println(fmt.Sprintf("AddSSHKey %s %s", username, public_key))
+
+	var folderPath = fmt.Sprintf("/home/%s/.ssh", username)
+	if !exists(folderPath) {
+		log.Println("AddSSHKey, createfolder")
+		err := os.MkdirAll(folderPath, os.ModePerm)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+
+	}
+
+	var filePath = fmt.Sprintf("%s/authorized_keys", folderPath)
+	log.Println(fmt.Sprintf("AddSSHKey, FilePath %s", filePath))
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(fmt.Sprintf("%s\n", public_key)); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusCreated, map[string]string{
+		"success": strconv.FormatBool(true),
+	})
+
+	/*is_vaulted, _ := strconv.ParseBool(mapToken["is_vaulted"])
 	username := mapToken["user"]
 	_ = mapToken["label"]
 
@@ -447,11 +476,7 @@ func (h *ProfileHandler) AddSSHKey(c *gin.Context) {
 		c.JSON(http.StatusCreated, map[string]string{
 			"success": strconv.FormatBool(true),
 		})
-	}
-
-	// c.JSON(http.StatusCreated, map[string]string{
-	// 	"success": strconv.FormatBool(true),
-	// })
+	}*/
 }
 
 func generatePrivateKey(bitSize int) (*rsa.PrivateKey, error) {
@@ -471,7 +496,20 @@ func generatePrivateKey(bitSize int) (*rsa.PrivateKey, error) {
 	return privateKey, nil
 }
 
-// encodePrivateKeyToPEM encodes Private Key from RSA to PEM format
+// take a rsa.PublicKey and return bytes suitable for writing to .pub file
+// returns in the format "ssh-rsa ..."
+func generatePublicKey(privatekey *rsa.PublicKey) ([]byte, error) {
+	publicRsaKey, err := ssh.NewPublicKey(privatekey)
+	if err != nil {
+		return nil, err
+	}
+
+	pubKeyBytes := ssh.MarshalAuthorizedKey(publicRsaKey)
+	log.Println("Public key generated")
+	return pubKeyBytes, nil
+}
+
+// encodes Private Key from RSA to PEM format
 func encodePrivateKeyToPEM(privateKey *rsa.PrivateKey) []byte {
 	// Get ASN.1 DER format
 	privDER := x509.MarshalPKCS1PrivateKey(privateKey)
@@ -489,20 +527,6 @@ func encodePrivateKeyToPEM(privateKey *rsa.PrivateKey) []byte {
 	return privatePEM
 }
 
-// generatePublicKey take a rsa.PublicKey and return bytes suitable for writing to .pub file
-// returns in the format "ssh-rsa ..."
-func generatePublicKey(privatekey *rsa.PublicKey) ([]byte, error) {
-	publicRsaKey, err := ssh.NewPublicKey(privatekey)
-	if err != nil {
-		return nil, err
-	}
-
-	pubKeyBytes := ssh.MarshalAuthorizedKey(publicRsaKey)
-
-	log.Println("Public key generated")
-	return pubKeyBytes, nil
-}
-
 // writePemToFile writes keys to a file
 func writeKeyToFile(keyBytes []byte, saveFileTo string) error {
 	err := ioutil.WriteFile(saveFileTo, keyBytes, 0600)
@@ -515,18 +539,6 @@ func writeKeyToFile(keyBytes []byte, saveFileTo string) error {
 }
 
 func (h *ProfileHandler) AddDeploymentKey(c *gin.Context) {
-	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
-	_ = userId
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -534,14 +546,15 @@ func (h *ProfileHandler) AddDeploymentKey(c *gin.Context) {
 	}
 
 	username := mapToken["user"]
-	// password := mapToken["password"]
-	// log.Println(fmt.Sprintf("Add SSH key, username: %s, password: %s", username, password))
-	////////////////////////////////////////////////////
+	if len(username) <= 0 {
+		c.JSON(http.StatusUnprocessableEntity, "Invalid params")
+		return
+	}
+
 	savePrivateFileTo := "/home/" + username + "/.ssh/id_rsa"
 	savePublicFileTo := "/home/" + username + "/.ssh/id_rsa.pub"
-	bitSize := 3072
 
-	privateKey, err := generatePrivateKey(bitSize)
+	privateKey, err := generatePrivateKey(3072)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
@@ -552,7 +565,6 @@ func (h *ProfileHandler) AddDeploymentKey(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-
 	privateKeyBytes := encodePrivateKeyToPEM(privateKey)
 
 	if !exists("/home/" + username + "/.ssh") {
@@ -580,18 +592,6 @@ func (h *ProfileHandler) AddDeploymentKey(c *gin.Context) {
 }
 
 func (h *ProfileHandler) CreateCronJob(c *gin.Context) {
-	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
-	_ = userId
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -599,26 +599,31 @@ func (h *ProfileHandler) CreateCronJob(c *gin.Context) {
 	}
 
 	cron_title := mapToken["title"]
-	cron_schedule := mapToken["cron_schedule"]
-	cron_job := mapToken["cron_job"]
+	cron_schedule := mapToken["schedule"]
+	cron_job := mapToken["job"]
 	_ = cron_title
 
 	if !ExecuteCommand("systemctl enable cron") {
-		c.JSON(http.StatusCreated, map[string]bool{
-			"success": false,
+		c.JSON(http.StatusCreated, Error{
+			success: false,
+			message: "Failed to enable cron job",
 		})
 		return
 	}
 
-	if !ExecuteCommand("printf \"\n\" >> /etc/crontab") {
-		c.JSON(http.StatusCreated, map[string]bool{
-			"success": false,
+	if !ExecuteCommand("printf \"\n\" >> /var/spool/cron/crontabs/root") {
+		c.JSON(http.StatusCreated, Error{
+			success: false,
+			message: "Failed to append empty line to crontabs",
 		})
 		return
 	}
-	if !ExecuteCommand("printf \"" + cron_schedule + " root " + cron_job + "\" >> /etc/crontab") {
-		c.JSON(http.StatusCreated, map[string]bool{
-			"success": false,
+
+	var cmd = fmt.Sprintf("printf \"%s %s\" >> /var/spool/cron/crontabs/root", cron_schedule, cron_job)
+	if !ExecuteCommand(cmd) {
+		c.JSON(http.StatusCreated, Error{
+			success: false,
+			message: "Failed to append job to crontabs",
 		})
 		return
 	}
