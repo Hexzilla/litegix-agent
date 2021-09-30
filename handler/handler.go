@@ -1,14 +1,12 @@
 package handlers
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"litegix-agent/auth"
 	"log"
@@ -21,7 +19,6 @@ import (
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/gcfg.v1"
 )
 
 type User struct {
@@ -155,7 +152,7 @@ func (h *ProfileHandler) Refresh(c *gin.Context) {
 	}
 }
 
-func AddLinuxUser1(username, password string) {
+/*func AddLinuxUser1(username, password string) {
 	//Create a new user here and create a new home directory
 	useradd := exec.Command("sh", "-c", "useradd -m "+username)
 	err := useradd.Start()
@@ -196,26 +193,7 @@ func AddLinuxUser(username, password string) {
 	}
 
 	useradd.Wait()
-}
-
-func (h *ProfileHandler) CreateSystemUser(c *gin.Context) {
-	mapToken := map[string]string{}
-	if err := c.ShouldBindJSON(&mapToken); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-
-	username := mapToken["name"]
-	password := mapToken["password"]
-	log.Println(fmt.Sprintf("Create system user, username: %s, password: %s", username, password))
-
-	// AddLinuxUser(username, password)
-	command := fmt.Sprintf("useradd -m " + username + " -p " + password)
-	result := ExecuteCommand(command)
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": result,
-	})
-}
+}*/
 
 func ExecuteCommand(command string) bool {
 	cmd := exec.Command("sh", "-c", command)
@@ -233,11 +211,7 @@ func ExecuteCommand(command string) bool {
 }
 
 func ExecuteMySQLQuery(query string) bool {
-	// It should be read from setting file.
-	// rootPassword := "android1987"
-	rootPassword := "android19871111"
-
-	mysqlConf := struct {
+	/*mysqlConf := struct {
 		Client struct {
 			User     string
 			Password string
@@ -249,12 +223,54 @@ func ExecuteMySQLQuery(query string) bool {
 		log.Fatalf("Failed to parse gcfg data: %s", err)
 	}
 	// toml.DecodeFile("/etc/mysql/conf.d/root.cnf", mysqlConf)
-	rootPassword = mysqlConf.Client.Password
+	var rootPassword = mysqlConf.Client.Password
 
 	// mysql -uroot -p${rootpasswd} -e
 	command := fmt.Sprintf("mysql -uroot -p%s -e \"%s\"", rootPassword, query)
 	log.Println(command)
+	return ExecuteCommand(command)*/
+
+	// mysql -uroot -p${rootpasswd} -e
+	command := fmt.Sprintf("mysql -uroot -e \"%s\"", query)
+	log.Println(command)
 	return ExecuteCommand(command)
+}
+
+func (h *ProfileHandler) CreateSystemUser(c *gin.Context) {
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	username := mapToken["name"]
+	password := mapToken["password"]
+	log.Println(fmt.Sprintf("Create system user, username: %s, password: %s", username, password))
+
+	command := fmt.Sprintf("useradd -m %s -p %s", username, password)
+	result := ExecuteCommand(command)
+
+	c.JSON(http.StatusCreated, map[string]bool{
+		"success": result,
+	})
+}
+
+func (h *ProfileHandler) DeleteSystemUser(c *gin.Context) {
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	username := mapToken["name"]
+	log.Println(fmt.Sprintf("Delete system user: %s", username))
+
+	command := fmt.Sprintf("userdel -r %s", username)
+	result := ExecuteCommand(command)
+
+	c.JSON(http.StatusCreated, map[string]bool{
+		"success": result,
+	})
 }
 
 func (h *ProfileHandler) CreateDatabase(c *gin.Context) {
@@ -276,6 +292,24 @@ func (h *ProfileHandler) CreateDatabase(c *gin.Context) {
 	})
 }
 
+func (h *ProfileHandler) DeleteDatabase(c *gin.Context) {
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	name := mapToken["name"]
+
+	query := fmt.Sprintf("DROP DATABASE %s;", name)
+	log.Println(query)
+	result := ExecuteMySQLQuery(query)
+
+	c.JSON(http.StatusCreated, map[string]bool{
+		"success": result,
+	})
+}
+
 func (h *ProfileHandler) CreateDatabaseUser(c *gin.Context) {
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
@@ -287,25 +321,28 @@ func (h *ProfileHandler) CreateDatabaseUser(c *gin.Context) {
 	password := mapToken["password"]
 
 	//CREATE USER ${MAINDB}@localhost IDENTIFIED BY '${PASSWDDB}';
-	var query = fmt.Sprintf("CREATE USER %s@localhost IDENTIFIED BY '%s';", name, password)
+	var query = fmt.Sprintf("CREATE USER '%s'@'localhost' IDENTIFIED BY '%s';GRANT ALL PRIVILEGES ON *.* TO '%s'@'localhost';FLUSH PRIVILEGES;", name, password, name)
 	log.Println(query)
 	var result = ExecuteMySQLQuery(query)
 
-	// GRANT ALL PRIVILEGES ON ${MAINDB}.* TO '${MAINDB}'@'localhost';
-	query = fmt.Sprintf("GRANT ALL PRIVILEGES ON %s.* TO '%s'@'localhost';", name, name)
-	log.Println(query)
-	result = ExecuteMySQLQuery(query)
+	c.JSON(http.StatusCreated, map[string]bool{
+		"success": result,
+	})
+}
 
-	if !result {
-		c.JSON(http.StatusCreated, map[string]bool{
-			"success": result,
-		})
+func (h *ProfileHandler) DeleteDatabaseUser(c *gin.Context) {
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
-	query = "FLUSH PRIVILEGES;"
+	name := mapToken["name"]
+
+	//DROP USER 'bloguser'@'localhost';
+	var query = fmt.Sprintf("DROP USER '%s'@'localhost';", name)
 	log.Println(query)
-	result = ExecuteMySQLQuery(query)
+	var result = ExecuteMySQLQuery(query)
 
 	c.JSON(http.StatusCreated, map[string]bool{
 		"success": result,

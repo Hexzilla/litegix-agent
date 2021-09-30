@@ -64,7 +64,7 @@ func (token *Tokenservice) CreateToken(userId string) (*TokenDetails, error) {
 }
 
 func TokenValid(r *http.Request) error {
-	token, err := verifyToken(r)
+	token, err := VerifyToken(r)
 	if err != nil {
 		return err
 	}
@@ -74,8 +74,8 @@ func TokenValid(r *http.Request) error {
 	return nil
 }
 
-func verifyToken(r *http.Request) (*jwt.Token, error) {
-	tokenString := extractToken(r)
+func VerifyToken(r *http.Request) (*jwt.Token, error) {
+	tokenString := ExtractToken(r)
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -89,7 +89,7 @@ func verifyToken(r *http.Request) (*jwt.Token, error) {
 }
 
 //get the token from the request body
-func extractToken(r *http.Request) string {
+func ExtractToken(r *http.Request) string {
 	bearToken := r.Header.Get("Authorization")
 	strArr := strings.Split(bearToken, " ")
 	if len(strArr) == 2 {
@@ -98,8 +98,7 @@ func extractToken(r *http.Request) string {
 	return ""
 }
 
-func extract(token *jwt.Token) (*AccessDetails, error) {
-
+func Extract(token *jwt.Token) (*AccessDetails, error) {
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if ok && token.Valid {
 		accessUuid, ok := claims["access_uuid"].(string)
@@ -117,11 +116,11 @@ func extract(token *jwt.Token) (*AccessDetails, error) {
 }
 
 func (t *Tokenservice) ExtractTokenMetadata(r *http.Request) (*AccessDetails, error) {
-	token, err := verifyToken(r)
+	token, err := VerifyToken(r)
 	if err != nil {
 		return nil, err
 	}
-	acc, err := extract(token)
+	acc, err := Extract(token)
 	if err != nil {
 		return nil, err
 	}
