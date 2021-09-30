@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"litegix-agent/auth"
-	handlers "litegix-agent/handler"
-	"litegix-agent/middleware"
 	"log"
 	"net/http"
 	"os"
@@ -12,14 +9,15 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v7"
 	"github.com/joho/godotenv"
+	
+	"litegix-agent/auth"
+	handlers "litegix-agent/handler"
+	"litegix-agent/middleware"
 )
 
 func init() {
-	if err := godotenv.Load(); err != nil {
-		log.Print("No .env file found")
-	}
+	
 }
 
 func NewRedisDB(host, port, password string) *redis.Client {
@@ -31,26 +29,35 @@ func NewRedisDB(host, port, password string) *redis.Client {
 	return redisClient
 }
 
+func loadConfiguration(file string) Config {
+    configFile, err := os.Open(file)
+    defer configFile.Close()
+    if err != nil {
+        log.Println(err.Error())
+    }
+    jsonParser := json.NewDecoder(configFile)
+
+	config := handlers.Config{}
+    err = jsonParser.Decode(&config)
+	if err != nil {
+		log.Fatal("can't decode config JSON: ", err)
+	}
+    return config
+}
+
 func main() {
 	gin.SetMode(gin.ReleaseMode)
+
+	config := loadConfiguration("./config.json")
+	log.Println(config.ServerID)
 	
-	appAddr := ":" + os.Getenv("PORT")
-
-	//redis details
-	redis_host := os.Getenv("REDIS_HOST")
-	redis_port := os.Getenv("REDIS_PORT")
-	redis_password := os.Getenv("REDIS_PASSWORD")
-
-	redisClient := NewRedisDB(redis_host, redis_port, redis_password)
-
-	var rd = auth.NewAuth(redisClient)
+	var rd = auth.NewAuth()	//TODO
 	var tk = auth.NewToken()
-	var service = handlers.NewProfile(rd, tk)
+	var service = handlers.NewHandler(rd, tk, config)
 
 	var router = gin.Default()
 
 	router.POST("/login", service.Login)
-	router.POST("/todo", middleware.TokenAuthMiddleware(), service.CreateTodo)
 	router.POST("/logout", middleware.TokenAuthMiddleware(), service.Logout)
 	router.POST("/refresh", service.Refresh)
 	router.POST("/system/user/create", middleware.TokenAuthMiddleware(), service.CreateSystemUser)
@@ -65,7 +72,7 @@ func main() {
 	router.POST("/services/view", middleware.TokenAuthMiddleware(), service.ViewServices)
 
 	srv := &http.Server{
-		Addr:    appAddr,
+		Addr:    ":21000",
 		Handler: router,
 	}
 	go func() {

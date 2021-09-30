@@ -24,33 +24,35 @@ import (
 	"gopkg.in/gcfg.v1"
 )
 
-// ProfileHandler struct
-type profileHandler struct {
-	rd auth.AuthInterface
-	tk auth.TokenInterface
-}
-
-func NewProfile(rd auth.AuthInterface, tk auth.TokenInterface) *profileHandler {
-	return &profileHandler{rd, tk}
-}
-
 type User struct {
-	ID       string `json:"id"`
+	ID       int 	`json:"id"`
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
+type Config struct {
+    ServerID string
+    ServerKey string
+	Environment string
+	WebServer string
+}
+
+// ProfileHandler struct
+type profileHandler struct {
+	rd auth.AuthInterface
+	tk auth.TokenInterface
+	user User
+}
+
 //In memory user
-var user = User{
+var user = User {
 	ID:       "1",
 	Username: "rightvalue",
 	Password: "android19",
 }
 
-type Todo struct {
-	UserID string `json:"user_id"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
+func NewHandler(rd auth.AuthInterface, tk auth.TokenInterface, user User) *profileHandler {
+	return &profileHandler{rd, tk}
 }
 
 func (h *profileHandler) Login(c *gin.Context) {
@@ -92,29 +94,6 @@ func (h *profileHandler) Logout(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, "Successfully logged out")
-}
-
-func (h *profileHandler) CreateTodo(c *gin.Context) {
-	var td Todo
-	if err := c.ShouldBindJSON(&td); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, "invalid json")
-		return
-	}
-	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	td.UserID = userId
-
-	//you can proceed to save the  to a database
-
-	c.JSON(http.StatusCreated, td)
 }
 
 func (h *profileHandler) Refresh(c *gin.Context) {
