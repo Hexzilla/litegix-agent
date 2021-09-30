@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -9,15 +10,15 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
-	
+	"github.com/go-redis/redis/v7"
+
 	"litegix-agent/auth"
 	handlers "litegix-agent/handler"
 	"litegix-agent/middleware"
 )
 
 func init() {
-	
+
 }
 
 func NewRedisDB(host, port, password string) *redis.Client {
@@ -29,29 +30,29 @@ func NewRedisDB(host, port, password string) *redis.Client {
 	return redisClient
 }
 
-func loadConfiguration(file string) Config {
-    configFile, err := os.Open(file)
-    defer configFile.Close()
-    if err != nil {
-        log.Println(err.Error())
-    }
-    jsonParser := json.NewDecoder(configFile)
+func loadConfiguration(file string) handlers.Config {
+	configFile, err := os.Open(file)
+	defer configFile.Close()
+	if err != nil {
+		log.Println(err.Error())
+	}
+	jsonParser := json.NewDecoder(configFile)
 
 	config := handlers.Config{}
-    err = jsonParser.Decode(&config)
+	err = jsonParser.Decode(&config)
 	if err != nil {
 		log.Fatal("can't decode config JSON: ", err)
 	}
-    return config
+	return config
 }
 
 func main() {
-	gin.SetMode(gin.ReleaseMode)
+	//gin.SetMode(gin.ReleaseMode)
 
 	config := loadConfiguration("./config.json")
 	log.Println(config.ServerID)
-	
-	var rd = auth.NewAuth()	//TODO
+
+	var rd = auth.NewAuth()
 	var tk = auth.NewToken()
 	var service = handlers.NewHandler(rd, tk, config)
 

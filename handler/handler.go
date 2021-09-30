@@ -25,53 +25,46 @@ import (
 )
 
 type User struct {
-	ID       int 	`json:"id"`
+	ID       int    `json:"id"`
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
 type Config struct {
-    ServerID string
-    ServerKey string
+	ServerID    string
+	ServerKey   string
 	Environment string
-	WebServer string
+	WebServer   string
 }
 
 // ProfileHandler struct
-type profileHandler struct {
-	rd auth.AuthInterface
-	tk auth.TokenInterface
-	user User
+type ProfileHandler struct {
+	rd     auth.AuthInterface
+	tk     auth.TokenInterface
+	config Config
 }
 
-//In memory user
-var user = User {
-	ID:       "1",
-	Username: "rightvalue",
-	Password: "android19",
+func NewHandler(rd auth.AuthInterface, tk auth.TokenInterface, config Config) *ProfileHandler {
+	return &ProfileHandler{rd, tk, config}
 }
 
-func NewHandler(rd auth.AuthInterface, tk auth.TokenInterface, user User) *profileHandler {
-	return &profileHandler{rd, tk}
-}
-
-func (h *profileHandler) Login(c *gin.Context) {
+func (h *ProfileHandler) Login(c *gin.Context) {
 	var u User
 	if err := c.ShouldBindJSON(&u); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, "Invalid json provided")
 		return
 	}
 	//compare the user from the request, with the one we defined:
-	if user.Username != u.Username || user.Password != u.Password {
+	if u.Username != h.config.ServerID || u.Password != h.config.ServerKey {
 		c.JSON(http.StatusUnauthorized, "Please provide valid login details")
 		return
 	}
-	ts, err := h.tk.CreateToken(user.ID)
+	ts, err := h.tk.CreateToken(u.Username)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	saveErr := h.rd.CreateAuth(user.ID, ts)
+	saveErr := h.rd.CreateAuth(u.Username, ts)
 	if saveErr != nil {
 		c.JSON(http.StatusUnprocessableEntity, saveErr.Error())
 		return
@@ -83,7 +76,7 @@ func (h *profileHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, tokens)
 }
 
-func (h *profileHandler) Logout(c *gin.Context) {
+func (h *ProfileHandler) Logout(c *gin.Context) {
 	//If metadata is passed and the tokens valid, delete them from the redis store
 	metadata, _ := h.tk.ExtractTokenMetadata(c.Request)
 	if metadata != nil {
@@ -96,7 +89,7 @@ func (h *profileHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, "Successfully logged out")
 }
 
-func (h *profileHandler) Refresh(c *gin.Context) {
+func (h *ProfileHandler) Refresh(c *gin.Context) {
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -205,7 +198,7 @@ func AddLinuxUser(username, password string) {
 	useradd.Wait()
 }
 
-func (h *profileHandler) CreateSystemUser(c *gin.Context) {
+func (h *ProfileHandler) CreateSystemUser(c *gin.Context) {
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -215,6 +208,7 @@ func (h *profileHandler) CreateSystemUser(c *gin.Context) {
 	username := mapToken["name"]
 	password := mapToken["password"]
 	log.Println(fmt.Sprintf("Create system user, username: %s, password: %s", username, password))
+
 	// AddLinuxUser(username, password)
 	command := fmt.Sprintf("useradd -m " + username + " -p " + password)
 	result := ExecuteCommand(command)
@@ -263,7 +257,7 @@ func ExecuteMySQLQuery(query string) bool {
 	return ExecuteCommand(command)
 }
 
-func (h *profileHandler) CreateDatabase(c *gin.Context) {
+func (h *ProfileHandler) CreateDatabase(c *gin.Context) {
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -282,7 +276,7 @@ func (h *profileHandler) CreateDatabase(c *gin.Context) {
 	})
 }
 
-func (h *profileHandler) CreateDatabaseUser(c *gin.Context) {
+func (h *ProfileHandler) CreateDatabaseUser(c *gin.Context) {
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -318,7 +312,7 @@ func (h *profileHandler) CreateDatabaseUser(c *gin.Context) {
 	})
 }
 
-func (h *profileHandler) ChangePhpVersion(c *gin.Context) {
+func (h *ProfileHandler) ChangePhpVersion(c *gin.Context) {
 	mapToken := map[string]string{}
 	if err := c.ShouldBindJSON(&mapToken); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
@@ -352,7 +346,7 @@ func exists(path string) bool {
 	return false
 }
 
-func (h *profileHandler) AddSSHKey(c *gin.Context) {
+func (h *ProfileHandler) AddSSHKey(c *gin.Context) {
 	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, "unauthorized")
@@ -483,7 +477,7 @@ func writeKeyToFile(keyBytes []byte, saveFileTo string) error {
 	return nil
 }
 
-func (h *profileHandler) AddDeploymentKey(c *gin.Context) {
+func (h *ProfileHandler) AddDeploymentKey(c *gin.Context) {
 	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, "unauthorized")
@@ -548,7 +542,7 @@ func (h *profileHandler) AddDeploymentKey(c *gin.Context) {
 	})
 }
 
-func (h *profileHandler) CreateCronJob(c *gin.Context) {
+func (h *ProfileHandler) CreateCronJob(c *gin.Context) {
 	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, "unauthorized")
@@ -597,7 +591,7 @@ func (h *profileHandler) CreateCronJob(c *gin.Context) {
 	})
 }
 
-func (h *profileHandler) CreateSuperVisor(c *gin.Context) {
+func (h *ProfileHandler) CreateSuperVisor(c *gin.Context) {
 	// should install
 	// apt-get install supervisor
 	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
@@ -675,7 +669,7 @@ func (h *profileHandler) CreateSuperVisor(c *gin.Context) {
 	})
 }
 
-func (h *profileHandler) AddFirewallRule(c *gin.Context) {
+func (h *ProfileHandler) AddFirewallRule(c *gin.Context) {
 	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, "unauthorized")
@@ -791,7 +785,7 @@ func ExecuteCommand_WithResult(command string) (string, error) {
 	return strReturn, err
 }
 
-func (h *profileHandler) ViewServices(c *gin.Context) {
+func (h *ProfileHandler) ViewServices(c *gin.Context) {
 	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, "unauthorized")

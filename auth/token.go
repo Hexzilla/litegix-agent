@@ -12,10 +12,10 @@ import (
 	"github.com/twinj/uuid"
 )
 
-type tokenservice struct{}
+type Tokenservice struct{}
 
-func NewToken() *tokenservice {
-	return &tokenservice{}
+func NewToken() *Tokenservice {
+	return &Tokenservice{}
 }
 
 type TokenInterface interface {
@@ -24,9 +24,9 @@ type TokenInterface interface {
 }
 
 //Token implements the TokenInterface
-var _ TokenInterface = &tokenservice{}
+var _ TokenInterface = &Tokenservice{}
 
-func (t *tokenservice) CreateToken(userId string) (*TokenDetails, error) {
+func (token *Tokenservice) CreateToken(userId string) (*TokenDetails, error) {
 	td := &TokenDetails{}
 	td.AtExpires = time.Now().Add(time.Minute * 30).Unix() //expires after 30 min
 	td.TokenUuid = uuid.NewV4().String()
@@ -116,7 +116,7 @@ func extract(token *jwt.Token) (*AccessDetails, error) {
 	return nil, errors.New("something went wrong")
 }
 
-func (t *tokenservice) ExtractTokenMetadata(r *http.Request) (*AccessDetails, error) {
+func (t *Tokenservice) ExtractTokenMetadata(r *http.Request) (*AccessDetails, error) {
 	token, err := verifyToken(r)
 	if err != nil {
 		return nil, err
