@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"litegix-agent/auth"
-	handlers "litegix-agent/handler"
-	"litegix-agent/middleware"
 	"log"
 	"net/http"
 	"os"
@@ -12,64 +9,51 @@ import (
 	"time"
 	"encoding/json"
 
+	"litegix-agent/auth"
+	handlers "litegix-agent/handler"
+	"litegix-agent/middleware"
+
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v7"
 	"github.com/joho/godotenv"
 )
 
-func init() {
-	if err := godotenv.Load(); err != nil {
-		log.Print("No .env file found")
-	}
-}
-
-func NewRedisDB(host, port, password string) *redis.Client {
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     host + ":" + port,
-		Password: password,
-		DB:       0,
-	})
-	return redisClient
-}
-
 type Config struct {
-    serverID string
-    serverKey string
-	environment string
-	webServer string
-	redis struct {
-        host string
-        port int
-		password string
-    } `json:"redis"`
+    ServerID string
+    ServerKey string
+	Environment string
+	WebServer string
 }
 
 func loadConfiguration(file string) Config {
-    var config Config
     configFile, err := os.Open(file)
     defer configFile.Close()
     if err != nil {
         log.Println(err.Error())
     }
     jsonParser := json.NewDecoder(configFile)
-    jsonParser.Decode(&config)
+
+	config := Config{}
+    err = jsonParser.Decode(&config)
+	if err != nil {
+		log.Fatal("can't decode config JSON: ", err)
+	}
     return config
 }
 
 func main() {
 	gin.SetMode(gin.ReleaseMode)
+
+	config := loadConfiguration("./config.json")
+	log.Println(config.ServerID)
 	
-	appAddr := ":" + os.Getenv("PORT")
-	log.Println(appAddr)
+	appAddr := ":21000"
 
 	//redis details
 	redis_host := os.Getenv("REDIS_HOST")
 	redis_port := os.Getenv("REDIS_PORT")
 	redis_password := os.Getenv("REDIS_PASSWORD")
 
-	redisClient := NewRedisDB(redis_host, redis_port, redis_password)
-
-	var rd = auth.NewAuth(redisClient)
+	var rd = auth.NewAuth(config)
 	var tk = auth.NewToken()
 	var service = handlers.NewProfile(rd, tk)
 

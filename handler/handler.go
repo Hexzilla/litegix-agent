@@ -47,11 +47,11 @@ var user = User{
 	Password: "android19",
 }
 
-type Todo struct {
+/*type Todo struct {
 	UserID string `json:"user_id"`
 	Title  string `json:"title"`
 	Body   string `json:"body"`
-}
+}*/
 
 func (h *profileHandler) Login(c *gin.Context) {
 	var u User

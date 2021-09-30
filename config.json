@@ -2,8 +2,5 @@
     "serverID"  : "4uQsUjjfJYyTe1ZWBb4DKaiEvJ1632908225QsVDF6DjzxImHxBxbSA3tW2Miw0O7ZQquybgmXeVnozcwnAZ43n7zUV5TwOtWjAV",
     "serverKey" : "0zow68dn1pbyBrX8lXVMJQqVq99MmJDTOnSEscYZZAxEPZuZA5Hk02m3qymcDLVcedMn9101iXJFQuqwDN2NfGsrEgG2u6XRsiMUXe4BIZ3t4UIySCygVmZlYhZOXoPG",
     "environment" : "production",
-    "webServer" : "nginx",
-    "cron": {
-        "setFacl": "0 * * * *"
-    }
+    "webServer" : "nginx"
 }
