@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"time"
+	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v7"
@@ -31,10 +32,35 @@ func NewRedisDB(host, port, password string) *redis.Client {
 	return redisClient
 }
 
+type Config struct {
+    serverID string
+    serverKey string
+	environment string
+	webServer string
+	redis struct {
+        host string
+        port int
+		password string
+    } `json:"redis"`
+}
+
+func loadConfiguration(file string) Config {
+    var config Config
+    configFile, err := os.Open(file)
+    defer configFile.Close()
+    if err != nil {
+        log.Println(err.Error())
+    }
+    jsonParser := json.NewDecoder(configFile)
+    jsonParser.Decode(&config)
+    return config
+}
+
 func main() {
 	gin.SetMode(gin.ReleaseMode)
 	
 	appAddr := ":" + os.Getenv("PORT")
+	log.Println(appAddr)
 
 	//redis details
 	redis_host := os.Getenv("REDIS_HOST")
@@ -50,7 +76,6 @@ func main() {
 	var router = gin.Default()
 
 	router.POST("/login", service.Login)
-	router.POST("/todo", middleware.TokenAuthMiddleware(), service.CreateTodo)
 	router.POST("/logout", middleware.TokenAuthMiddleware(), service.Logout)
 	router.POST("/refresh", service.Refresh)
 	router.POST("/system/user/create", middleware.TokenAuthMiddleware(), service.CreateSystemUser)

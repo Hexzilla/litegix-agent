@@ -94,7 +94,7 @@ func (h *profileHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, "Successfully logged out")
 }
 
-func (h *profileHandler) CreateTodo(c *gin.Context) {
+/*func (h *profileHandler) CreateTodo(c *gin.Context) {
 	var td Todo
 	if err := c.ShouldBindJSON(&td); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, "invalid json")
@@ -115,7 +115,7 @@ func (h *profileHandler) CreateTodo(c *gin.Context) {
 	//you can proceed to save the  to a database
 
 	c.JSON(http.StatusCreated, td)
-}
+}*/
 
 func (h *profileHandler) Refresh(c *gin.Context) {
 	mapToken := map[string]string{}
