@@ -1,0 +1,11 @@
+[Service]
+ExecStart=/litegix/litegix-agent/litegix
+Restart=always
+StandardOutput=syslog
+StandardError=syslog
+User=root
+Group=root
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

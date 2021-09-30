@@ -1,0 +1,5 @@
+Package: litegix-agent
+Version: 1.0
+Architecture: amd64
+Maintainer: goldencat <bluebird6922@gmail.com>
+Description: litegix-agent
