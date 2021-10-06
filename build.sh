@@ -5,7 +5,8 @@ PACKAGE_NAME="litegix-agent"
 GOOS="linux"
 GOARCH="amd64"
 BUILDMODE="release"
-OUTPUT_NAME=$PACKAGE_NAME'-'$GOOS'-'$GOARCH
+#OUTPUT_NAME=$PACKAGE_NAME'-'$GOOS'-'$GOARCH
+OUTPUT_NAME="litegix"
 
 env GOOS=$GOOS GOARCH=$GOARCH go build -o $OUTPUT_NAME -ldflags "-s -w"
 if [ $? -ne 0 ]; then

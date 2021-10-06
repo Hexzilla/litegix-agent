@@ -37,7 +37,7 @@ func loadConfiguration(file string) handlers.Config {
 }
 
 func main() {
-	//gin.SetMode(gin.ReleaseMode)
+	gin.SetMode(gin.ReleaseMode)
 
 	config := loadConfiguration("./config.json")
 	log.Println(config.ServerID)
@@ -67,7 +67,7 @@ func main() {
 	router.POST("/cronjob", middleware.TokenAuthMiddleware(), service.CreateCronJob)
 	router.POST("/supervisorjob/create", middleware.TokenAuthMiddleware(), service.CreateSuperVisor)
 	router.POST("/firewall/addrule", middleware.TokenAuthMiddleware(), service.AddFirewallRule)
-	router.POST("/services/view", middleware.TokenAuthMiddleware(), service.ViewServices)
+	router.GET("/services" /*middleware.TokenAuthMiddleware(),*/, service.ViewServices)
 
 	srv := &http.Server{
 		Addr:    ":21000",

@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
@@ -39,11 +38,6 @@ type ProfileHandler struct {
 	rd     auth.AuthInterface
 	tk     auth.TokenInterface
 	config Config
-}
-
-type Error struct {
-	success bool
-	message string
 }
 
 func NewHandler(rd auth.AuthInterface, tk auth.TokenInterface, config Config) *ProfileHandler {
@@ -215,7 +209,48 @@ func ExecuteCommand(command string) bool {
 	return true
 }
 
+type AsyncResult struct {
+	errcode int
+	result  string
+}
+
+func ExecuteCommandAsync(command string) <-chan AsyncResult {
+	result := make(chan AsyncResult)
+	go func() {
+		defer close(result)
+
+		res := AsyncResult{}
+		cmd := exec.Command("sh", "-c", command)
+		stdout, err := cmd.CombinedOutput()
+		if err != nil {
+			res.errcode = -1
+			log.Printf("Command execution exit code: %s", err.Error())
+			if exitError, ok := err.(*exec.ExitError); ok {
+				res.errcode = exitError.ExitCode()
+				result <- res
+			}
+		} else {
+			res.errcode = 0
+			res.result = strings.TrimSpace(string(stdout))
+		}
+		result <- res
+	}()
+	return result
+}
+
+func ExecuteMySQLQueryAsync(query string) <-chan AsyncResult {
+	// mysql -uroot -p${rootpasswd} -e
+	command := fmt.Sprintf("mysql -uroot -e \"%s\"", query)
+	log.Println(command)
+	return ExecuteCommandAsync(command)
+}
+
 func ExecuteMySQLQuery(query string) bool {
+	// mysql -uroot -p${rootpasswd} -e
+	command := fmt.Sprintf("mysql -uroot -e \"%s\"", query)
+	log.Println(command)
+	return ExecuteCommand(command)
+
 	/*mysqlConf := struct {
 		Client struct {
 			User     string
@@ -234,11 +269,6 @@ func ExecuteMySQLQuery(query string) bool {
 	command := fmt.Sprintf("mysql -uroot -p%s -e \"%s\"", rootPassword, query)
 	log.Println(command)
 	return ExecuteCommand(command)*/
-
-	// mysql -uroot -p${rootpasswd} -e
-	command := fmt.Sprintf("mysql -uroot -e \"%s\"", query)
-	log.Println(command)
-	return ExecuteCommand(command)
 }
 
 func (h *ProfileHandler) CreateSystemUser(c *gin.Context) {
@@ -253,10 +283,9 @@ func (h *ProfileHandler) CreateSystemUser(c *gin.Context) {
 	log.Println(fmt.Sprintf("Create system user, username: %s, password: %s", username, password))
 
 	command := fmt.Sprintf("useradd -m %s -p %s", username, password)
-	result := ExecuteCommand(command)
-
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": result,
+	res := <-ExecuteCommandAsync(command)
+	c.JSON(http.StatusCreated, gin.H{
+		"error": res.errcode,
 	})
 }
 
@@ -271,10 +300,9 @@ func (h *ProfileHandler) DeleteSystemUser(c *gin.Context) {
 	log.Println(fmt.Sprintf("Delete system user: %s", username))
 
 	command := fmt.Sprintf("userdel -r %s", username)
-	result := ExecuteCommand(command)
-
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": result,
+	res := <-ExecuteCommandAsync(command)
+	c.JSON(http.StatusCreated, gin.H{
+		"error": res.errcode,
 	})
 }
 
@@ -290,10 +318,9 @@ func (h *ProfileHandler) CreateDatabase(c *gin.Context) {
 
 	query := fmt.Sprintf("CREATE DATABASE %s /*\\!40100 DEFAULT CHARACTER SET %s */;", name, encoding)
 	log.Println(query)
-	result := ExecuteMySQLQuery(query)
-
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": result,
+	res := <-ExecuteMySQLQueryAsync(query)
+	c.JSON(http.StatusCreated, gin.H{
+		"error": res.errcode,
 	})
 }
 
@@ -308,10 +335,9 @@ func (h *ProfileHandler) DeleteDatabase(c *gin.Context) {
 
 	query := fmt.Sprintf("DROP DATABASE %s;", name)
 	log.Println(query)
-	result := ExecuteMySQLQuery(query)
-
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": result,
+	res := <-ExecuteMySQLQueryAsync(query)
+	c.JSON(http.StatusCreated, gin.H{
+		"error": res.errcode,
 	})
 }
 
@@ -328,10 +354,9 @@ func (h *ProfileHandler) CreateDatabaseUser(c *gin.Context) {
 	//CREATE USER ${MAINDB}@localhost IDENTIFIED BY '${PASSWDDB}';
 	var query = fmt.Sprintf("CREATE USER '%s'@'localhost' IDENTIFIED BY '%s';GRANT ALL PRIVILEGES ON *.* TO '%s'@'localhost';FLUSH PRIVILEGES;", name, password, name)
 	log.Println(query)
-	var result = ExecuteMySQLQuery(query)
-
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": result,
+	res := <-ExecuteMySQLQueryAsync(query)
+	c.JSON(http.StatusCreated, gin.H{
+		"error": res.errcode,
 	})
 }
 
@@ -347,10 +372,9 @@ func (h *ProfileHandler) DeleteDatabaseUser(c *gin.Context) {
 	//DROP USER 'bloguser'@'localhost';
 	var query = fmt.Sprintf("DROP USER '%s'@'localhost';", name)
 	log.Println(query)
-	var result = ExecuteMySQLQuery(query)
-
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": result,
+	res := <-ExecuteMySQLQueryAsync(query)
+	c.JSON(http.StatusCreated, gin.H{
+		"error": res.errcode,
 	})
 }
 
@@ -427,8 +451,8 @@ func (h *ProfileHandler) AddSSHKey(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, map[string]string{
-		"success": strconv.FormatBool(true),
+	c.JSON(http.StatusCreated, gin.H{
+		"error": 0,
 	})
 
 	/*is_vaulted, _ := strconv.ParseBool(mapToken["is_vaulted"])
@@ -603,33 +627,36 @@ func (h *ProfileHandler) CreateCronJob(c *gin.Context) {
 	cron_job := mapToken["job"]
 	_ = cron_title
 
-	if !ExecuteCommand("systemctl enable cron") {
-		c.JSON(http.StatusCreated, Error{
-			success: false,
-			message: "Failed to enable cron job",
+	var res = <-ExecuteCommandAsync("systemctl enable cron")
+	if res.errcode != 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error":   res.errcode,
+			"message": "Unable to enable cron service",
 		})
 		return
 	}
 
-	if !ExecuteCommand("printf \"\n\" >> /var/spool/cron/crontabs/root") {
-		c.JSON(http.StatusCreated, Error{
-			success: false,
-			message: "Failed to append empty line to crontabs",
+	res = <-ExecuteCommandAsync("printf \"\n\" >> /var/spool/cron/crontabs/root")
+	if res.errcode != 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error":   res.errcode,
+			"message": "Failed to update crontabs",
 		})
 		return
 	}
 
 	var cmd = fmt.Sprintf("printf \"%s %s\" >> /var/spool/cron/crontabs/root", cron_schedule, cron_job)
-	if !ExecuteCommand(cmd) {
-		c.JSON(http.StatusCreated, Error{
-			success: false,
-			message: "Failed to append job to crontabs",
+	res = <-ExecuteCommandAsync(cmd)
+	if res.errcode != 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error":   res.errcode,
+			"message": "Failed to add cron job",
 		})
 		return
 	}
 
-	c.JSON(http.StatusCreated, map[string]bool{
-		"success": true,
+	c.JSON(http.StatusCreated, gin.H{
+		"error": 0,
 	})
 }
 
@@ -828,38 +855,29 @@ func ExecuteCommand_WithResult(command string) (string, error) {
 }
 
 func (h *ProfileHandler) ViewServices(c *gin.Context) {
-	metadata, err := h.tk.ExtractTokenMetadata(c.Request)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	userId, err := h.rd.FetchAuth(metadata.TokenUuid)
-	_ = userId
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
+	var command = "systemctl -t service | grep -E '\\.service' | sed 's/^\\s*//g'"
+	res := <-ExecuteCommandAsync(command)
+	if res.errcode != 0 {
+		c.JSON(http.StatusCreated, gin.H{
+			"error": res.errcode,
+		})
 		return
 	}
 
-	mapToken := map[string]string{}
-	if err := c.ShouldBindJSON(&mapToken); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
+	// mariadb
+	items := strings.Split(res.result, "\n")
+	for i, s := range items {
+		var service = strings.TrimSpace(s)
+		service = strings.ReplaceAll(service, "  ", "")
+		var nodes = strings.Split(service, " ")
+		fmt.Println(i, nodes)
 	}
 
-	// if !ExecuteCommand("ufw enable") {
-	// 	c.JSON(http.StatusCreated, map[string]bool{
-	// 		"success": false,
-	// 	})
-	// 	return
-	// }
+	c.JSON(http.StatusCreated, gin.H{
+		"error": res.errcode,
+	})
 
-	// f_type := mapToken["type"]
-	// f_from_port := mapToken["from_port"]
-	// f_end_port := mapToken["end_port"]
-	// f_ip_address := mapToken["ip_address"]
-	// f_protocol := strings.ToLower(mapToken["protocol"])
-	// f_action := strings.ToLower(mapToken["action"])
-	type StructService struct {
+	/*type StructService struct {
 		Process string `json:"process"`
 		Name    string `json:"name"`
 		Version string `json:"version"`
@@ -1042,5 +1060,5 @@ func (h *ProfileHandler) ViewServices(c *gin.Context) {
 		"success":  "true",
 		"services": string(services),
 		// "temp": strTemp,
-	})
+	})*/
 }
