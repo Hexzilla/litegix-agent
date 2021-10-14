@@ -3,3 +3,5 @@
 .env
 id_rsa_test
 id_rsa_test.pub
+litegix
+build-deb/litegix-agent_1.0-1_amd64.deb

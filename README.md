@@ -3,5 +3,5 @@ This is the complete code for my talk on Gophercon Europe 2020, [here](https://w
 Also a complete code for the article i wrote on Nexmo Developer Spotlight Program [here](https://www.nexmo.com/blog/2020/03/13/using-jwt-for-authentication-in-a-golang-application-dr)
 
 
-
+cd build-deb
 dpkg-deb --build --root-owner-group litegix-agent_1.0-1_amd64

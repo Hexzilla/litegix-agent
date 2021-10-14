@@ -39,7 +39,7 @@ func loadConfiguration(file string) handlers.Config {
 func main() {
 	gin.SetMode(gin.ReleaseMode)
 
-	config := loadConfiguration("./config.json")
+	config := loadConfiguration("/litegix/litegix-agent/config.json")
 	log.Println(config.ServerID)
 
 	var rd = auth.NewAuth()
