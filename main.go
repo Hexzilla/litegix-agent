@@ -13,7 +13,7 @@ import (
 
 	"litegix-agent/auth"
 	handlers "litegix-agent/handler"
-	"litegix-agent/middleware"
+	//"litegix-agent/middleware"
 )
 
 func init() {
@@ -49,25 +49,25 @@ func main() {
 	var router = gin.Default()
 
 	router.POST("/login", service.Login)
-	router.POST("/logout", middleware.TokenAuthMiddleware(), service.Logout)
+	router.POST("/logout", /*middleware.TokenAuthMiddleware(),*/ service.Logout)
 	router.POST("/refresh", service.Refresh)
 
-	router.POST("/system/user", middleware.TokenAuthMiddleware(), service.CreateSystemUser)
-	router.DELETE("/system/user", middleware.TokenAuthMiddleware(), service.DeleteSystemUser)
+	router.POST("/system/user", /*middleware.TokenAuthMiddleware(),*/ service.CreateSystemUser)
+	router.DELETE("/system/user", /*middleware.TokenAuthMiddleware(),*/ service.DeleteSystemUser)
 
-	router.POST("/database", middleware.TokenAuthMiddleware(), service.CreateDatabase)
-	router.DELETE("/database", middleware.TokenAuthMiddleware(), service.DeleteDatabase)
+	router.POST("/database", /*middleware.TokenAuthMiddleware(),*/ service.CreateDatabase)
+	router.DELETE("/database", /*middleware.TokenAuthMiddleware(),*/ service.DeleteDatabase)
 
-	router.POST("/database/user", middleware.TokenAuthMiddleware(), service.CreateDatabaseUser)
-	router.DELETE("/database/user", middleware.TokenAuthMiddleware(), service.DeleteDatabaseUser)
+	router.POST("/database/user", /*middleware.TokenAuthMiddleware(),*/ service.CreateDatabaseUser)
+	router.DELETE("/database/user", /*middleware.TokenAuthMiddleware(),*/ service.DeleteDatabaseUser)
 
-	router.POST("/php/version", middleware.TokenAuthMiddleware(), service.ChangePhpVersion)
-	router.POST("/sshkey", middleware.TokenAuthMiddleware(), service.AddSSHKey)
-	router.POST("/deploymentkey", middleware.TokenAuthMiddleware(), service.AddDeploymentKey)
-	router.POST("/cronjob", middleware.TokenAuthMiddleware(), service.CreateCronJob)
-	router.POST("/supervisorjob/create", middleware.TokenAuthMiddleware(), service.CreateSuperVisor)
-	router.POST("/firewall/addrule", middleware.TokenAuthMiddleware(), service.AddFirewallRule)
-	router.GET("/services" /*middleware.TokenAuthMiddleware(),*/, service.ViewServices)
+	router.POST("/php/version", /*middleware.TokenAuthMiddleware(),*/ service.ChangePhpVersion)
+	router.POST("/sshkey", /*middleware.TokenAuthMiddleware(),*/ service.AddSSHKey)
+	router.POST("/deploymentkey", /*middleware.TokenAuthMiddleware(),*/ service.AddDeploymentKey)
+	router.POST("/cronjob", /*middleware.TokenAuthMiddleware(),*/ service.CreateCronJob)
+	router.POST("/supervisorjob/create", /*middleware.TokenAuthMiddleware(),*/ service.CreateSuperVisor)
+	router.POST("/firewall/addrule", /*middleware.TokenAuthMiddleware(),*/ service.AddFirewallRule)
+	router.GET("/services", /*middleware.TokenAuthMiddleware(),*/ service.ViewServices)
 
 	srv := &http.Server{
 		Addr:    ":21000",
