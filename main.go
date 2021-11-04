@@ -53,13 +53,13 @@ func main() {
 	router.POST("/refresh", service.Refresh)
 
 	router.POST("/system/user", /*middleware.TokenAuthMiddleware(),*/ service.CreateSystemUser)
-	router.DELETE("/system/user", /*middleware.TokenAuthMiddleware(),*/ service.DeleteSystemUser)
+	router.DELETE("/system/user/:name", /*middleware.TokenAuthMiddleware(),*/ service.DeleteSystemUser)
 
 	router.POST("/database", /*middleware.TokenAuthMiddleware(),*/ service.CreateDatabase)
-	router.DELETE("/database", /*middleware.TokenAuthMiddleware(),*/ service.DeleteDatabase)
+	router.DELETE("/database/:name", /*middleware.TokenAuthMiddleware(),*/ service.DeleteDatabase)
 
 	router.POST("/database/user", /*middleware.TokenAuthMiddleware(),*/ service.CreateDatabaseUser)
-	router.DELETE("/database/user", /*middleware.TokenAuthMiddleware(),*/ service.DeleteDatabaseUser)
+	router.DELETE("/database/user/:name", /*middleware.TokenAuthMiddleware(),*/ service.DeleteDatabaseUser)
 
 	router.POST("/php/version", /*middleware.TokenAuthMiddleware(),*/ service.ChangePhpVersion)
 	router.POST("/sshkey", /*middleware.TokenAuthMiddleware(),*/ service.AddSSHKey)

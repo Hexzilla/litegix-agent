@@ -290,13 +290,7 @@ func (h *ProfileHandler) CreateSystemUser(c *gin.Context) {
 }
 
 func (h *ProfileHandler) DeleteSystemUser(c *gin.Context) {
-	mapToken := map[string]string{}
-	if err := c.ShouldBindJSON(&mapToken); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-
-	username := mapToken["name"]
+	username := c.Param("name")
 	log.Println(fmt.Sprintf("Delete system user: %s", username))
 
 	command := fmt.Sprintf("userdel -r %s", username)
@@ -325,13 +319,8 @@ func (h *ProfileHandler) CreateDatabase(c *gin.Context) {
 }
 
 func (h *ProfileHandler) DeleteDatabase(c *gin.Context) {
-	mapToken := map[string]string{}
-	if err := c.ShouldBindJSON(&mapToken); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-
-	name := mapToken["name"]
+	name := c.Param("name")
+	log.Println(fmt.Sprintf("Delete Database: %s", name))
 
 	query := fmt.Sprintf("DROP DATABASE %s;", name)
 	log.Println(query)
@@ -361,13 +350,8 @@ func (h *ProfileHandler) CreateDatabaseUser(c *gin.Context) {
 }
 
 func (h *ProfileHandler) DeleteDatabaseUser(c *gin.Context) {
-	mapToken := map[string]string{}
-	if err := c.ShouldBindJSON(&mapToken); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-
-	name := mapToken["name"]
+	name := c.Param("name")
+	log.Println(fmt.Sprintf("Delete Database User: %s", name))
 
 	//DROP USER 'bloguser'@'localhost';
 	var query = fmt.Sprintf("DROP USER '%s'@'localhost';", name)
