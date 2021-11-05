@@ -282,7 +282,7 @@ func (h *ProfileHandler) CreateSystemUser(c *gin.Context) {
 	password := mapToken["password"]
 	log.Println(fmt.Sprintf("Create system user, username: %s, password: %s", username, password))
 
-	command := fmt.Sprintf("useradd -m %s -p %s", username, password)
+	command := fmt.Sprintf("useradd -m \"%s\" --password \"%s\"", username, password)
 	res := <-ExecuteCommandAsync(command)
 	c.JSON(http.StatusCreated, gin.H{
 		"error": res.errcode,
@@ -403,15 +403,15 @@ func (h *ProfileHandler) AddSSHKey(c *gin.Context) {
 		return
 	}
 
-	username := mapToken["user"]
-	public_key := mapToken["public_key"]
-	if len(username) <= 0 || len(public_key) <= 0 {
+	userName := mapToken["userName"]
+	pubKey := mapToken["pubKey"]
+	if len(userName) <= 0 || len(pubKey) <= 0 {
 		c.JSON(http.StatusUnprocessableEntity, "Invalid params")
 		return
 	}
-	log.Println(fmt.Sprintf("AddSSHKey %s %s", username, public_key))
+	log.Println(fmt.Sprintf("AddSSHKey %s %s", userName, pubKey))
 
-	var folderPath = fmt.Sprintf("/home/%s/.ssh", username)
+	var folderPath = fmt.Sprintf("/home/%s/.ssh", userName)
 	if !exists(folderPath) {
 		log.Println("AddSSHKey, createfolder")
 		err := os.MkdirAll(folderPath, os.ModePerm)
@@ -419,18 +419,19 @@ func (h *ProfileHandler) AddSSHKey(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, err.Error())
 			return
 		}
-
 	}
 
 	var filePath = fmt.Sprintf("%s/authorized_keys", folderPath)
 	log.Println(fmt.Sprintf("AddSSHKey, FilePath %s", filePath))
 	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
+		log.Println("AddSSHKey, failed to open file authorized_keys")
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	defer f.Close()
-	if _, err := f.WriteString(fmt.Sprintf("%s\n", public_key)); err != nil {
+	if _, err := f.WriteString(fmt.Sprintf("%s\n", pubKey)); err != nil {
+		log.Println("AddSSHKey, failed to write key")
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
@@ -491,16 +492,18 @@ func generatePrivateKey(bitSize int) (*rsa.PrivateKey, error) {
 	// Private Key generation
 	privateKey, err := rsa.GenerateKey(rand.Reader, bitSize)
 	if err != nil {
+		log.Println("PrivateKeyGen, error: %d", err.Error())
 		return nil, err
 	}
 
 	// Validate Private Key
 	err = privateKey.Validate()
 	if err != nil {
+		log.Println("PrivateKeyGen, validate-error: %d", err.Error())
 		return nil, err
 	}
 
-	log.Println("Private Key generated")
+	log.Println("PrivateKey generated")
 	return privateKey, nil
 }
 
@@ -509,6 +512,7 @@ func generatePrivateKey(bitSize int) (*rsa.PrivateKey, error) {
 func generatePublicKey(privatekey *rsa.PublicKey) ([]byte, error) {
 	publicRsaKey, err := ssh.NewPublicKey(privatekey)
 	if err != nil {
+		log.Println("PublicKeyGen-error-1")
 		return nil, err
 	}
 
@@ -539,6 +543,7 @@ func encodePrivateKeyToPEM(privateKey *rsa.PrivateKey) []byte {
 func writeKeyToFile(keyBytes []byte, saveFileTo string) error {
 	err := ioutil.WriteFile(saveFileTo, keyBytes, 0600)
 	if err != nil {
+		log.Println("writeKeyToFile, err: %d", err.Error())
 		return err
 	}
 
@@ -553,39 +558,49 @@ func (h *ProfileHandler) AddDeploymentKey(c *gin.Context) {
 		return
 	}
 
-	username := mapToken["user"]
-	if len(username) <= 0 {
+	userName := mapToken["userName"]
+	if len(userName) <= 0 {
 		c.JSON(http.StatusUnprocessableEntity, "Invalid params")
 		return
 	}
 
-	savePrivateFileTo := "/home/" + username + "/.ssh/id_rsa"
-	savePublicFileTo := "/home/" + username + "/.ssh/id_rsa.pub"
+	if !exists("/home/" + userName) {
+		log.Println("AddDeploymentKey, the user doen not exists")
+		c.JSON(http.StatusCreated, gin.H{
+			"error": -10,
+		})
+	}
+
+	sshKeyPath := "/home/" + userName + "/.ssh"
+	privateKeyPath := sshKeyPath + "/id_rsa"
+	publicKeyPath := sshKeyPath + "/id_rsa.pub"
 
 	privateKey, err := generatePrivateKey(3072)
 	if err != nil {
+		log.Println("AddDeploymentKey, failed to generate private key")
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
 	publicKeyBytes, err := generatePublicKey(&privateKey.PublicKey)
 	if err != nil {
+		log.Println("AddDeploymentKey, failed to generate public key")
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	privateKeyBytes := encodePrivateKeyToPEM(privateKey)
 
-	if !exists("/home/" + username + "/.ssh") {
-		ExecuteCommand("mkdir /home/" + username + "/.ssh")
+	if !exists(sshKeyPath) {
+		ExecuteCommand("mkdir " + sshKeyPath)
 	}
 
-	err = writeKeyToFile(privateKeyBytes, savePrivateFileTo)
+	err = writeKeyToFile(privateKeyBytes, privateKeyPath)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
-	err = writeKeyToFile([]byte(publicKeyBytes), savePublicFileTo)
+	err = writeKeyToFile([]byte(publicKeyBytes), publicKeyPath)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, err.Error())
 		return
@@ -593,9 +608,9 @@ func (h *ProfileHandler) AddDeploymentKey(c *gin.Context) {
 
 	myString := string(publicKeyBytes[:])
 	////////////////////////////////////////////////////
-	c.JSON(http.StatusCreated, map[string]string{
-		"success": strconv.FormatBool(true),
-		"pub_key": myString,
+	c.JSON(http.StatusCreated, gin.H{
+		"error": 0,
+		"pubKey": myString,
 	})
 }
 
