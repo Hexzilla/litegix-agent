@@ -621,10 +621,9 @@ func (h *ProfileHandler) CreateCronJob(c *gin.Context) {
 		return
 	}
 
-	cron_title := mapToken["title"]
+	_ := mapToken["label"]
 	cron_schedule := mapToken["schedule"]
 	cron_job := mapToken["job"]
-	_ = cron_title
 
 	var res = <-ExecuteCommandAsync("systemctl enable cron")
 	if res.errcode != 0 {
