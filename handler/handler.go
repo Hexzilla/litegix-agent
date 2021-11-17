@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"litegix-agent/auth"
 	"log"
@@ -288,6 +289,18 @@ func (h *ProfileHandler) CreateSystemUser(c *gin.Context) {
 		"error": res.errcode,
 	})
 }
+
+func (h *ProfileHandler) ChangeSystemUserPassword(c *gin.Context) {
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	//username := c.Param("name")
+	//password := mapToken["password"]
+}
+
 
 func (h *ProfileHandler) DeleteSystemUser(c *gin.Context) {
 	username := c.Param("name")
@@ -621,7 +634,7 @@ func (h *ProfileHandler) CreateCronJob(c *gin.Context) {
 		return
 	}
 
-	_ := mapToken["label"]
+	// label := mapToken["label"]
 	cron_schedule := mapToken["schedule"]
 	cron_job := mapToken["job"]
 
@@ -1059,4 +1072,163 @@ func (h *ProfileHandler) ViewServices(c *gin.Context) {
 		"services": string(services),
 		// "temp": strTemp,
 	})*/
+}
+
+func DownloadFile(filepath string, url string) error {
+	// Get the data
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Create the file
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// Write the body to file
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+
+func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	appName := mapToken["name"]
+	userName := mapToken["userName"]
+	domain := mapToken["domainName"]
+	phpVersion := mapToken["phpVersion"]
+	siteTitle := mapToken["siteTitle"]
+	adminEmail := mapToken["adminEmail"]
+	adminUserName := mapToken["adminUserName"]
+	adminPassword := mapToken["adminPassword"]
+	dbuser := mapToken["databaseUser"]
+	dbname := mapToken["databaseName"]
+	dbpass := mapToken["databasePass"]
+	dbprefix := mapToken["tablePrefix"]
+
+	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s", appName, userName))
+	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s", domain, phpVersion, siteTitle))
+	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s", adminEmail, adminUserName, adminPassword))
+	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s %s", dbuser, dbname, dbpass, dbprefix))
+
+	if len(appName) <= 0 || len(userName) <= 0 || len(phpVersion) <= 0 || len(siteTitle) <= 0 || len(adminUserName) <= 0 || len(adminPassword) <= 0 || len(adminEmail) <= 0 {
+		c.JSON(http.StatusUnprocessableEntity, "Invalid params")
+		return
+	}
+
+
+	filePath := "/home/litegix/wp-cli.phar"
+	fileUrl := "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
+	err := DownloadFile(filePath, fileUrl)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, "Failed to download wp-cli.phar")
+		return
+	}
+
+	err = os.Chmod(filePath, 0777)
+    if err != nil {
+        c.JSON(http.StatusUnprocessableEntity, "Failed to chmod for wp-cli.phar")
+		return
+    }
+
+    err = os.Rename(filePath, "/usr/local/bin/wp")
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, "Failed to install wp-cli.phar")
+		return
+	}
+
+	appPath := fmt.Sprintf("/home/%s/webapps/%s/", userName, appName)
+	cmd := fmt.Sprintf("sudo -u %s -i -- mkdir -p %s", userName, appPath)
+	res := <-ExecuteCommandAsync(cmd)
+	if res.errcode != 0 {
+		c.JSON(http.StatusCreated, gin.H{
+			"error": 1000001,
+		})
+		return
+	}
+
+	cmd = fmt.Sprintf("sudo -u %s -i -- wp core download --path=%s --locale=en_US", userName, appPath)
+	res = <-ExecuteCommandAsync(cmd)
+	if res.errcode != 0 {
+		c.JSON(http.StatusCreated, gin.H{
+			"error": 1000002,
+		})
+		return
+	}
+
+	cmd = fmt.Sprintf("sudo -u %s -i -- wp core config --path=%s --dbname=%s --dbuser=%s --dbpass=%s --dbprefix=%s", userName, appPath, dbname, dbuser, dbpass, dbprefix)
+	res = <-ExecuteCommandAsync(cmd)
+	if res.errcode != 0 {
+		c.JSON(http.StatusCreated, gin.H{
+			"error": 1000003,
+		})
+		return
+	}
+
+	cmd = fmt.Sprintf("sudo -u %s -i -- wp core install --path=%s --title='%s' --url=%s --admin_user=%s --admin_email=%s --admin_password=%s",
+		userName, appPath, siteTitle, domain, adminUserName, adminEmail, adminPassword)
+	res = <-ExecuteCommandAsync(cmd)
+	if res.errcode != 0 {
+		c.JSON(http.StatusCreated, gin.H{
+			"error": 1000004,
+		})
+		return
+	}
+	
+
+	/*var commands = "#!/bin/bash\n";
+	commands += fmt.Sprintf("APPNAME='%s'\n", appName)
+	commands += fmt.Sprintf("OWNER='%s'\n", userName)
+	commands += fmt.Sprintf("DOMAIN='%s'\n", domain)
+	commands += fmt.Sprintf("DATABASE_NAME='%s'\n", databaseName)
+	commands += fmt.Sprintf("DATABASE_USER='%s'\n", dbname)
+	commands += fmt.Sprintf("DATABASE_PASS='%s'\n", databasePass)
+	commands += fmt.Sprintf("ADMIN_EMAIL='%s'\n", adminEmail)
+	commands += fmt.Sprintf("ADMIN_USERNAME='%s'\n", adminUserName)
+	commands += fmt.Sprintf("ADMIN_PASSWORD='%s'\n", adminPassword)
+	commands += fmt.Sprintf("TABLE_PREFIX='%s'\n", tablePrefix)
+	commands += fmt.Sprintf("APPDIR='/home/%s/webapps/%s/'\n", userName, appName)
+
+	commands += "curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar\n"
+	commands += "chmod +x wp-cli.phar\n"
+	commands += "mv wp-cli.phar /usr/local/bin/wp\n"
+
+	commands += "sudo -u $OWNER -i -- mkdir -p $APPDIR\n";
+	commands += "sudo -u $OWNER -i -- wp core download --path=$APPDIR --locale=en_US\n";
+	commands += "sudo -u $OWNER -i -- wp core config --path=$APPDIR --dbname=$DATABASE_NAME --dbuser=$DATABASE_USER --dbpass=$DATABASE_PASS --dbprefix=$TABLE_PREFIX\n";
+	commands += "sudo -u $OWNER -i -- wp core install --path=$APPDIR --title='$APPNAME' --url=$DOMAIN --admin_user=$ADMIN_USERNAME --admin_email=$ADMIN_EMAIL --admin_password=$ADMIN_PASSWORD\n";
+
+	var filePath = "/home/litegix/wp.sh"
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		log.Println("InstallWordpress, failed to open file")
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(commands); err != nil {
+		log.Println("InstallWordpress, failed to write key")
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	res := <-ExecuteCommandAsync(command)
+	if res.errcode != 0 {
+		c.JSON(http.StatusCreated, gin.H{
+			"error": res.errcode,
+		})
+	}*/
+
+	c.JSON(http.StatusCreated, gin.H{
+		"error": 0,
+	})
 }

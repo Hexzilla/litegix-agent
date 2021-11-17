@@ -20,3 +20,5 @@ $Litegix2021!!!
 
 scp ./litegix-agent root@65.21.253.1:/root/litegix
 cp -f ./litegix /litegix/litegix-agent/litegix
+
+sudo cp ./litegix-agent_1.0-1_amd64.deb /media/sf_shared/

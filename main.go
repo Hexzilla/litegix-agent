@@ -54,6 +54,7 @@ func main() {
 
 	router.POST("/system/user", /*middleware.TokenAuthMiddleware(),*/ service.CreateSystemUser)
 	router.DELETE("/system/user/:name", /*middleware.TokenAuthMiddleware(),*/ service.DeleteSystemUser)
+	router.PUT("/system/user/:name/changepwd", /*middleware.TokenAuthMiddleware(),*/ service.ChangeSystemUserPassword)
 
 	router.POST("/database", /*middleware.TokenAuthMiddleware(),*/ service.CreateDatabase)
 	router.DELETE("/database/:name", /*middleware.TokenAuthMiddleware(),*/ service.DeleteDatabase)
@@ -68,6 +69,8 @@ func main() {
 	router.POST("/supervisorjob/create", /*middleware.TokenAuthMiddleware(),*/ service.CreateSuperVisor)
 	router.POST("/firewall/addrule", /*middleware.TokenAuthMiddleware(),*/ service.AddFirewallRule)
 	router.GET("/services", /*middleware.TokenAuthMiddleware(),*/ service.ViewServices)
+
+	router.POST("/webapps/wordpress", /*middleware.TokenAuthMiddleware(),*/ service.InstallWordpress)
 
 	srv := &http.Server{
 		Addr:    ":21000",
