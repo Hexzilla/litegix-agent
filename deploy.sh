@@ -17,4 +17,3 @@ cp ./litegix-agent_1.0-1_amd64.deb ~/gowork/litegix-agent-release/
 cd ~/gowork/litegix-agent-release/
 git commit -am "deploy"
 git push origin main
-

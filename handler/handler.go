@@ -1243,6 +1243,12 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	os.Chmod(filePath, 755)
 	os.Chown(filePath, usrId, groupId)
 
+	//
+	target := fmt.Sprintf("/etc/nginx/sites-available/%s", appName)
+	symlink := fmt.Sprintf("/etc/nginx/sites-enabled/%s", appName)
+	os.Remove(symlink)
+	os.Symlink(target, symlink)
+
 	// Restart nginx service
 	cmd = "systemctl restart nginx"
 	res = <-ExecuteCommandAsync(cmd)
