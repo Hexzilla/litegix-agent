@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"bufio"
 	"litegix-agent/auth"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"strconv"
 	"strings"
 
@@ -1125,23 +1127,26 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 		return
 	}
 
+	usr, err := user.Lookup(userName)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, "Failed to get user id")
+		return
+	}
 
+	// Install wordpress via wp-cli.
 	filePath := "/home/litegix/wp-cli.phar"
 	fileUrl := "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
-	err := DownloadFile(filePath, fileUrl)
-	if err != nil {
+	if DownloadFile(filePath, fileUrl) != nil {
 		c.JSON(http.StatusUnprocessableEntity, "Failed to download wp-cli.phar")
 		return
 	}
 
-	err = os.Chmod(filePath, 0777)
-    if err != nil {
-        c.JSON(http.StatusUnprocessableEntity, "Failed to chmod for wp-cli.phar")
+  if os.Chmod(filePath, 0777) != nil {
+		c.JSON(http.StatusUnprocessableEntity, "Failed to chmod for wp-cli.phar")
 		return
-    }
+  }
 
-    err = os.Rename(filePath, "/usr/local/bin/wp")
-	if err != nil {
+	if os.Rename(filePath, "/usr/local/bin/wp") != nil {
 		c.JSON(http.StatusUnprocessableEntity, "Failed to install wp-cli.phar")
 		return
 	}
@@ -1183,7 +1188,75 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 		})
 		return
 	}
-	
+
+
+	//Install nginx configuration
+	filePath = "/litegix/nginx.conf"
+	f, err := os.Open(filePath)
+	if err != nil {
+		log.Println("failed to open default nginx.conf")
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Split(bufio.ScanLines)
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	filePath = fmt.Sprintf("/etc/nginx/sites-available/%s", appName)
+	out, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		log.Println("InstallWordpress, failed to create file for nginx.conf")
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	defer out.Close()
+
+	for _, line := range lines {
+		var index = strings.Index(line, "#location ~ \\.php$ {")
+		if index >= 0 {
+			out.WriteString("	location ~ \\.php$ {\n")
+			out.WriteString("		include snippets/fastcgi-php.conf;\n")
+			out.WriteString("		fastcgi_pass unix:/var/run/php/php8.0-fpm.sock;\n")
+			out.WriteString("	}\n")
+			out.WriteString("\n")
+		}
+
+		index = strings.Index(line, "root /var/www/html");
+		if index >= 0 {
+			line = strings.Replace(line, "/var/www/html", appPath, 1)
+		}
+		index = strings.Index(line, "index index.html index.htm");
+		if index >= 0 {
+			line = strings.Replace(line, "index.nginx-debian.html", "index.nginx-debian.html index.php", 1)
+		}
+		out.WriteString(line + "\n")
+	}
+
+	// Change file permission for nginx.conf
+	usrId, _ := strconv.Atoi(usr.Uid)
+	groupId, _ := strconv.Atoi(usr.Gid)
+	os.Chmod(filePath, 755)
+	os.Chown(filePath, usrId, groupId)
+
+	// Restart nginx service
+	cmd = "systemctl restart nginx"
+	res = <-ExecuteCommandAsync(cmd)
+	if res.errcode != 0 {
+		c.JSON(http.StatusCreated, gin.H{
+			"error": 1000021,
+		})
+		return
+	}
+
+	// Success
+	c.JSON(http.StatusCreated, gin.H{
+		"error": 0,
+	})
 
 	/*var commands = "#!/bin/bash\n";
 	commands += fmt.Sprintf("APPNAME='%s'\n", appName)
@@ -1226,9 +1299,9 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 		c.JSON(http.StatusCreated, gin.H{
 			"error": res.errcode,
 		})
-	}*/
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"error": 0,
-	})
+	})*/
 }
