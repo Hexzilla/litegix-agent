@@ -7,9 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"os/user"
-	"bufio"
-	"strings"
+	"io/ioutil"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -40,61 +38,12 @@ func loadConfiguration(file string) handlers.Config {
 }
 
 func test_nginx() {
-	var appPath = "/home/litegix/webapps/tester";
-	var userName = "alex"
-
-	usr, err := user.Lookup(userName)
-	if err != nil {
-		return
-	}
-	log.Println("User, Group:", usr.Uid, usr.Gid)
-
-	//Install nginx configuration
-	filePath := "/litegix/nginx.conf"
-	f, err := os.Open(filePath)
-	if err != nil {
-		log.Println("failed to open default nginx.conf")
-		//c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	scanner.Split(bufio.ScanLines)
-	var lines []string
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-
-	filePath = "./sample.conf"
-	out, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		log.Println("InstallWordpress, failed to create file for nginx.conf")
-		//c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	defer out.Close()
-
-
-	for _, line := range lines {
-		var index = strings.Index(line, "#location ~ \\.php$ {")
-		if index >= 0 {
-			out.WriteString("	location ~ \\.php$ {\n")
-			out.WriteString("		include snippets/fastcgi-php.conf;\n")
-			out.WriteString("		fastcgi_pass unix:/var/run/php/php8.0-fpm.sock;\n")
-			out.WriteString("	}\n")
-			out.WriteString("\n")
-		}
-
-		index = strings.Index(line, "root /var/www/html");
-		if index >= 0 {
-			line = strings.Replace(line, "/var/www/html", appPath, 1)
-		}
-		index = strings.Index(line, "index index.html index.htm");
-		if index >= 0 {
-			line = strings.Replace(line, "index.nginx-debian.html", "index.nginx-debian.html index.php", 1)
-		}
-		out.WriteString(line + "\n")
+	sites_enabled := "/"
+	files, err := ioutil.ReadDir(sites_enabled)
+  if err == nil {
+	  for _, f := range files {
+		  log.Println(sites_enabled + f.Name())
+	  }
 	}
 }
 
@@ -104,7 +53,7 @@ func main() {
 	config := loadConfiguration("/litegix/litegix-agent/config.json")
 	log.Println(config.ServerID)
 
-	test_nginx()
+	//test_nginx()
 
 	var rd = auth.NewAuth()
 	var tk = auth.NewToken()

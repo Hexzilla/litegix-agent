@@ -1133,6 +1133,17 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 		return
 	}
 
+	// Create database if not exists.
+	query := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s /*\\!40100 DEFAULT CHARACTER SET %s */;", dbname, "utf8_general_ci")
+	log.Println(query)
+	res := <-ExecuteMySQLQueryAsync(query)
+	log.Println(fmt.Sprintf("create database result: %d", res.errcode))
+
+	query = fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s';GRANT ALL PRIVILEGES ON *.* TO '%s'@'localhost';FLUSH PRIVILEGES;", dbuser, dbpass, dbuser)
+	log.Println(query)
+	res := <-ExecuteMySQLQueryAsync(query)
+	log.Println(fmt.Sprintf("create dbuser result: %d", res.errcode))
+
 	// Install wordpress via wp-cli.
 	filePath := "/home/litegix/wp-cli.phar"
 	fileUrl := "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
@@ -1156,7 +1167,8 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	res := <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
 		c.JSON(http.StatusCreated, gin.H{
-			"error": 1000001,
+			"error": 1001,
+			"msg": "Failed to make directory for web root",
 		})
 		return
 	}
@@ -1165,7 +1177,8 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	res = <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
 		c.JSON(http.StatusCreated, gin.H{
-			"error": 1000002,
+			"error": 1002,
+			"msg": "Failed to download wordpress",
 		})
 		return
 	}
@@ -1174,7 +1187,8 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	res = <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
 		c.JSON(http.StatusCreated, gin.H{
-			"error": 1000003,
+			"error": 1003,
+			"msg": "Failed to config database for wordpress",
 		})
 		return
 	}
@@ -1184,7 +1198,8 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	res = <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
 		c.JSON(http.StatusCreated, gin.H{
-			"error": 1000004,
+			"error": 1004,
+			"msg": "Failed to install wordpress",
 		})
 		return
 	}
@@ -1195,7 +1210,10 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		log.Println("failed to open default nginx.conf")
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		c.JSON(http.StatusCreated, gin.H{
+			"error": 1005,
+			"msg": "Failed to open default nginx.conf",
+		})
 		return
 	}
 	defer f.Close()
@@ -1211,7 +1229,10 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	out, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		log.Println("InstallWordpress, failed to create file for nginx.conf")
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		c.JSON(http.StatusCreated, gin.H{
+			"error": 1006,
+			"msg": "Failed to create nginx.conf",
+		})
 		return
 	}
 	defer out.Close()
@@ -1243,7 +1264,16 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	os.Chmod(filePath, 755)
 	os.Chown(filePath, usrId, groupId)
 
-	//
+	// Remove already enabled sites.
+	sites_enabled := "/etc/nginx/sites-enabled/"
+	files, err := ioutil.ReadDir(sites_enabled)
+  if err == nil {
+	  for _, f := range files {
+		  os.Remove(sites_enabled + f.Name())
+	  }
+	}
+
+	// Make symbolic link
 	target := fmt.Sprintf("/etc/nginx/sites-available/%s", appName)
 	symlink := fmt.Sprintf("/etc/nginx/sites-enabled/%s", appName)
 	os.Remove(symlink)
@@ -1254,7 +1284,8 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	res = <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
 		c.JSON(http.StatusCreated, gin.H{
-			"error": 1000021,
+			"error": 1022,
+			"msg": "Failed to restart nginx service",
 		})
 		return
 	}
@@ -1263,51 +1294,4 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"error": 0,
 	})
-
-	/*var commands = "#!/bin/bash\n";
-	commands += fmt.Sprintf("APPNAME='%s'\n", appName)
-	commands += fmt.Sprintf("OWNER='%s'\n", userName)
-	commands += fmt.Sprintf("DOMAIN='%s'\n", domain)
-	commands += fmt.Sprintf("DATABASE_NAME='%s'\n", databaseName)
-	commands += fmt.Sprintf("DATABASE_USER='%s'\n", dbname)
-	commands += fmt.Sprintf("DATABASE_PASS='%s'\n", databasePass)
-	commands += fmt.Sprintf("ADMIN_EMAIL='%s'\n", adminEmail)
-	commands += fmt.Sprintf("ADMIN_USERNAME='%s'\n", adminUserName)
-	commands += fmt.Sprintf("ADMIN_PASSWORD='%s'\n", adminPassword)
-	commands += fmt.Sprintf("TABLE_PREFIX='%s'\n", tablePrefix)
-	commands += fmt.Sprintf("APPDIR='/home/%s/webapps/%s/'\n", userName, appName)
-
-	commands += "curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar\n"
-	commands += "chmod +x wp-cli.phar\n"
-	commands += "mv wp-cli.phar /usr/local/bin/wp\n"
-
-	commands += "sudo -u $OWNER -i -- mkdir -p $APPDIR\n";
-	commands += "sudo -u $OWNER -i -- wp core download --path=$APPDIR --locale=en_US\n";
-	commands += "sudo -u $OWNER -i -- wp core config --path=$APPDIR --dbname=$DATABASE_NAME --dbuser=$DATABASE_USER --dbpass=$DATABASE_PASS --dbprefix=$TABLE_PREFIX\n";
-	commands += "sudo -u $OWNER -i -- wp core install --path=$APPDIR --title='$APPNAME' --url=$DOMAIN --admin_user=$ADMIN_USERNAME --admin_email=$ADMIN_EMAIL --admin_password=$ADMIN_PASSWORD\n";
-
-	var filePath = "/home/litegix/wp.sh"
-	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		log.Println("InstallWordpress, failed to open file")
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	defer f.Close()
-	if _, err := f.WriteString(commands); err != nil {
-		log.Println("InstallWordpress, failed to write key")
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-
-	res := <-ExecuteCommandAsync(command)
-	if res.errcode != 0 {
-		c.JSON(http.StatusCreated, gin.H{
-			"error": res.errcode,
-		})
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"error": 0,
-	})*/
 }
