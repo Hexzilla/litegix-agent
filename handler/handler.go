@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"bufio"
 	"litegix-agent/auth"
 	"log"
 	"net/http"
@@ -1110,8 +1109,8 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	phpVersion := mapToken["phpVersion"]
 	siteTitle := mapToken["siteTitle"]
 	adminEmail := mapToken["adminEmail"]
-	adminUserName := mapToken["adminUserName"]
-	adminPassword := mapToken["adminPassword"]
+	adminUser := mapToken["adminUserName"]
+	adminPass := mapToken["adminPassword"]
 	dbuser := mapToken["databaseUser"]
 	dbname := mapToken["databaseName"]
 	dbpass := mapToken["databasePass"]
@@ -1123,174 +1122,28 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 
 	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s", appName, userName))
 	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s", domain, phpVersion, siteTitle))
-	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s", adminEmail, adminUserName, adminPassword))
+	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s", adminEmail, adminUser, adminPass))
 	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s %s", dbuser, dbname, dbpass, dbprefix))
 
-	if len(appName) <= 0 || len(userName) <= 0 || len(phpVersion) <= 0 || len(siteTitle) <= 0 || len(adminUserName) <= 0 || len(adminPassword) <= 0 || len(adminEmail) <= 0 {
+	if len(appName) <= 0 || len(userName) <= 0 || len(phpVersion) <= 0 || len(siteTitle) <= 0 || len(adminUser) <= 0 || len(adminPass) <= 0 || len(adminEmail) <= 0 {
 		c.JSON(http.StatusUnprocessableEntity, "Invalid params")
 		return
 	}
 
-	usr, err := user.Lookup(userName)
+	_, err := user.Lookup(userName)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, "Failed to get user id")
 		return
 	}
 
-	// Create database if not exists.
-	query := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s /*\\!40100 DEFAULT CHARACTER SET %s */;", dbname, "utf8_general_ci")
-	log.Println(query)
-	res := <-ExecuteMySQLQueryAsync(query)
-	log.Println(fmt.Sprintf("create database result: %d", res.errcode))
-
-	query = fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s';GRANT ALL PRIVILEGES ON *.* TO '%s'@'localhost';FLUSH PRIVILEGES;", dbuser, dbpass, dbuser)
-	log.Println(query)
-	res = <-ExecuteMySQLQueryAsync(query)
-	log.Println(fmt.Sprintf("create dbuser result: %d", res.errcode))
-
-	// Install wordpress via wp-cli.
-	filePath := "/home/litegix/wp-cli.phar"
-	fileUrl := "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar"
-	if DownloadFile(filePath, fileUrl) != nil {
-		c.JSON(http.StatusUnprocessableEntity, "Failed to download wp-cli.phar")
-		return
-	}
-
-  if os.Chmod(filePath, 0777) != nil {
-		c.JSON(http.StatusUnprocessableEntity, "Failed to chmod for wp-cli.phar")
-		return
-  }
-
-	if os.Rename(filePath, "/usr/local/bin/wp") != nil {
-		c.JSON(http.StatusUnprocessableEntity, "Failed to install wp-cli.phar")
-		return
-	}
-
-	appPath := fmt.Sprintf("/home/%s/webapps/%s/", userName, appName)
-	cmd := fmt.Sprintf("sudo -u %s -i -- mkdir -p %s", userName, appPath)
-	res = <-ExecuteCommandAsync(cmd)
-	if res.errcode != 0 {
-		c.JSON(http.StatusCreated, gin.H{
-			"error": 1001,
-			"msg": "Failed to make directory for web root",
-		})
-		return
-	}
-
-	cmd = fmt.Sprintf("sudo -u %s -i -- wp core download --path=%s --locale=en_US", userName, appPath)
-	res = <-ExecuteCommandAsync(cmd)
-	if res.errcode != 0 {
-		c.JSON(http.StatusCreated, gin.H{
-			"error": 1002,
-			"msg": "Failed to download wordpress",
-		})
-		return
-	}
-
-	// Config wordpress with username, database name and password.
-	cmd = fmt.Sprintf("sudo -u %s -i -- wp core config --path=%s --dbname=%s --dbuser=%s --dbpass=%s --dbprefix=%s", userName, appPath, dbname, dbuser, dbpass, dbprefix)
-	res = <-ExecuteCommandAsync(cmd)
-	if res.errcode != 0 {
-		c.JSON(http.StatusCreated, gin.H{
-			"error": 1003,
-			"msg": "Failed to config database for wordpress",
-		})
-		return
-	}
-
-	cmd = fmt.Sprintf("sudo -u %s -i -- wp core install --path=%s --title='%s' --url=%s --admin_user=%s --admin_email=%s --admin_password=%s",
-		userName, appPath, siteTitle, domain, adminUserName, adminEmail, adminPassword)
-	res = <-ExecuteCommandAsync(cmd)
-	if res.errcode != 0 {
-		c.JSON(http.StatusCreated, gin.H{
-			"error": 1004,
-			"msg": "Failed to install wordpress",
-		})
-		return
-	}
-
-
-	//Install nginx configuration
-	filePath = "/litegix/nginx.conf"
-	f, err := os.Open(filePath)
-	if err != nil {
-		log.Println("failed to open default nginx.conf")
-		c.JSON(http.StatusCreated, gin.H{
-			"error": 1005,
-			"msg": "Failed to open default nginx.conf",
-		})
-		return
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	scanner.Split(bufio.ScanLines)
-	var lines []string
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-
-	filePath = fmt.Sprintf("/etc/nginx/sites-available/%s", appName)
-	out, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		log.Println("InstallWordpress, failed to create file for nginx.conf")
-		c.JSON(http.StatusCreated, gin.H{
-			"error": 1006,
-			"msg": "Failed to create nginx.conf",
-		})
-		return
-	}
-	defer out.Close()
-
-	for _, line := range lines {
-		var index = strings.Index(line, "#location ~ \\.php$ {")
-		if index >= 0 {
-			out.WriteString("	location ~ \\.php$ {\n")
-			out.WriteString("		include snippets/fastcgi-php.conf;\n")
-			out.WriteString("		fastcgi_pass unix:/var/run/php/php8.0-fpm.sock;\n")
-			out.WriteString("	}\n")
-			out.WriteString("\n")
-		}
-
-		index = strings.Index(line, "root /var/www/html");
-		if index >= 0 {
-			line = strings.Replace(line, "/var/www/html", appPath, 1)
-		}
-		index = strings.Index(line, "index index.html index.htm");
-		if index >= 0 {
-			line = strings.Replace(line, "index.nginx-debian.html", "index.nginx-debian.html index.php", 1)
-		}
-		out.WriteString(line + "\n")
-	}
-
-	// Change file permission for nginx.conf
-	usrId, _ := strconv.Atoi(usr.Uid)
-	groupId, _ := strconv.Atoi(usr.Gid)
-	os.Chmod(filePath, 755)
-	os.Chown(filePath, usrId, groupId)
-
-	// Remove already enabled sites.
-	sites_enabled := "/etc/nginx/sites-enabled/"
-	files, err := ioutil.ReadDir(sites_enabled)
-  if err == nil {
-	  for _, f := range files {
-		  os.Remove(sites_enabled + f.Name())
-	  }
-	}
-
-	// Make symbolic link
-	target := fmt.Sprintf("/etc/nginx/sites-available/%s", appName)
-	symlink := fmt.Sprintf("/etc/nginx/sites-enabled/%s", appName)
-	os.Remove(symlink)
-	os.Symlink(target, symlink)
-
 	// Restart nginx service
-	cmd = "systemctl restart nginx"
-	res = <-ExecuteCommandAsync(cmd)
+	cmd := fmt.Sprintf("./inswp.sh %s %s %s %s %s %s %s %s %s %s %s",
+		userName, appName, siteTitle, domain, adminUser, adminEmail, adminPass, dbuser, dbname, dbpass, dbprefix);
+	res := <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
 		c.JSON(http.StatusCreated, gin.H{
-			"error": 1022,
-			"msg": "Failed to restart nginx service",
+			"error": res.errcode,
+			"msg": "Failed to install wordpress",
 		})
 		return
 	}
