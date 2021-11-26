@@ -218,6 +218,7 @@ type AsyncResult struct {
 }
 
 func ExecuteCommandAsync(command string) <-chan AsyncResult {
+	log.Println(command)
 	result := make(chan AsyncResult)
 	go func() {
 		defer close(result)
@@ -244,7 +245,6 @@ func ExecuteCommandAsync(command string) <-chan AsyncResult {
 func ExecuteMySQLQueryAsync(query string) <-chan AsyncResult {
 	// mysql -uroot -p${rootpasswd} -e
 	command := fmt.Sprintf("mysql -uroot -e \"%s\"", query)
-	log.Println(command)
 	return ExecuteCommandAsync(command)
 }
 
@@ -1117,6 +1117,10 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	dbpass := mapToken["databasePass"]
 	dbprefix := mapToken["tablePrefix"]
 
+	if len(dbprefix) <= 0 {
+		dbprefix = "wp_"
+	}
+
 	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s", appName, userName))
 	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s", domain, phpVersion, siteTitle))
 	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s", adminEmail, adminUserName, adminPassword))
@@ -1141,7 +1145,7 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 
 	query = fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s';GRANT ALL PRIVILEGES ON *.* TO '%s'@'localhost';FLUSH PRIVILEGES;", dbuser, dbpass, dbuser)
 	log.Println(query)
-	res := <-ExecuteMySQLQueryAsync(query)
+	res = <-ExecuteMySQLQueryAsync(query)
 	log.Println(fmt.Sprintf("create dbuser result: %d", res.errcode))
 
 	// Install wordpress via wp-cli.
@@ -1164,7 +1168,7 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 
 	appPath := fmt.Sprintf("/home/%s/webapps/%s/", userName, appName)
 	cmd := fmt.Sprintf("sudo -u %s -i -- mkdir -p %s", userName, appPath)
-	res := <-ExecuteCommandAsync(cmd)
+	res = <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
 		c.JSON(http.StatusCreated, gin.H{
 			"error": 1001,
@@ -1183,6 +1187,7 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 		return
 	}
 
+	// Config wordpress with username, database name and password.
 	cmd = fmt.Sprintf("sudo -u %s -i -- wp core config --path=%s --dbname=%s --dbuser=%s --dbpass=%s --dbprefix=%s", userName, appPath, dbname, dbuser, dbpass, dbprefix)
 	res = <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
