@@ -9,6 +9,9 @@ rm ./build-deb/litegix-agent_1.0-1_amd64.deb
 mv ./litegix-agent ./build-deb/litegix-agent_1.0-1_amd64/litegix/litegix-agent/litegix
 
 echo "Make deb package"
+cp ./inswp.sh ./build-deb/litegix-agent_1.0-1_amd64/litegix/litegix-agent/inswp.sh
+cp ./inscert.sh ./build-deb/litegix-agent_1.0-1_amd64/litegix/litegix-agent/inscert.sh
+
 cd build-deb
 dpkg-deb --build --root-owner-group litegix-agent_1.0-1_amd64
 

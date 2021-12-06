@@ -1137,7 +1137,7 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	}
 
 	// Restart nginx service
-	cmd := fmt.Sprintf("./inswp.sh %s %s %s %s %s %s %s %s %s %s %s",
+	cmd := fmt.Sprintf("/litegix/litegix-agent/inswp.sh %s %s %s %s %s %s %s %s %s %s %s",
 		userName, appName, siteTitle, domain, adminUser, adminEmail, adminPass, dbuser, dbname, dbpass, dbprefix);
 	res := <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
