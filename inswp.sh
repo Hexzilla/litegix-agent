@@ -18,6 +18,9 @@ WEBCF="$SERVER_ROOT/conf/httpd_config.conf"
 WPPORT=80
 SSLWPPORT=443
 
+HOMEDIR="/home/$USERNAME/"
+adduser --disabled-password --gecos "" $USERNAME &> /dev/null
+
 echo -e "Create database and user for wordpress"
 mysql -uroot -e "CREATE DATABASE IF NOT EXISTS $DBNAME /*\\!40100 DEFAULT CHARACTER SET utf8_general_ci */;"
 mysql -uroot -e "CREATE USER IF NOT EXISTS '$DBUSER'@'localhost' IDENTIFIED BY '$DBPASS';GRANT ALL PRIVILEGES ON *.* TO '$DBUSER'@'localhost';FLUSH PRIVILEGES;"
