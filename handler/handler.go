@@ -1106,6 +1106,7 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	appName := mapToken["name"]
 	userName := mapToken["userName"]
 	domain := mapToken["domainName"]
+	webserver := mapToken["webserver"]
 	phpVersion := mapToken["phpVersion"]
 	siteTitle := mapToken["siteTitle"]
 	adminEmail := mapToken["adminEmail"]
@@ -1125,7 +1126,7 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s", adminEmail, adminUser, adminPass))
 	log.Println(fmt.Sprintf("InstallWordpress(1) %s %s %s %s", dbuser, dbname, dbpass, dbprefix))
 
-	if len(appName) <= 0 || len(userName) <= 0 || len(phpVersion) <= 0 || len(siteTitle) <= 0 || len(adminUser) <= 0 || len(adminPass) <= 0 || len(adminEmail) <= 0 {
+	if len(appName) <= 0 || len(userName) <= 0 || len(webserver) <= 0 || len(phpVersion) <= 0 || len(siteTitle) <= 0 || len(adminUser) <= 0 || len(adminPass) <= 0 || len(adminEmail) <= 0 {
 		c.JSON(http.StatusUnprocessableEntity, "Invalid params")
 		return
 	}
@@ -1137,8 +1138,8 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 	}
 
 	// Restart nginx service
-	cmd := fmt.Sprintf("/litegix/litegix-agent/inswp.sh %s %s %s %s %s %s %s %s %s %s %s",
-		userName, appName, siteTitle, domain, adminUser, adminEmail, adminPass, dbuser, dbname, dbpass, dbprefix);
+	cmd := fmt.Sprintf("/litegix/litegix-agent/inswp.sh %s %s %s %s %s %s %s %s %s %s %s %s",
+		userName, appName, siteTitle, domain, adminUser, adminEmail, adminPass, dbuser, dbname, dbpass, dbprefix, webserver);
 	res := <-ExecuteCommandAsync(cmd)
 	if res.errcode != 0 {
 		c.JSON(http.StatusCreated, gin.H{
