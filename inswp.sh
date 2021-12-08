@@ -11,6 +11,12 @@ DBUSER="$8"
 DBNAME="$9"
 DBPASS="${10}"
 DBPREFIX="${11}"
+WEBSERVER="${12}"
+
+SERVER_ROOT=/usr/local/lsws
+WEBCF="$SERVER_ROOT/conf/httpd_config.conf"
+WPPORT=80
+SSLWPPORT=443
 
 echo -e "Create database and user for wordpress"
 mysql -uroot -e "CREATE DATABASE IF NOT EXISTS $DBNAME /*\\!40100 DEFAULT CHARACTER SET utf8_general_ci */;"
@@ -34,14 +40,17 @@ sudo -u $USERNAME -i -- wp core config --path=$APPPATH --dbname=$DBNAME --dbuser
 
 sudo -u $USERNAME -i -- wp core install --path=$APPPATH --title="$TITLE" --url=$DOMAIN --admin_user=$ADMINUSER --admin_email=$ADMINEMAIL --admin_password=$ADMINPASS
 
-# Remove already enabled sites.
-rm -r /etc/nginx/sites-enabled/*
 
-# Make nginx configuration file.
-NGINXCONFIG="/etc/nginx/sites-available/$APPNAME"
-rm $NGINXCONFIG
+function config_nginx
+{
+  # Remove already enabled sites.
+  rm -r /etc/nginx/sites-enabled/*
 
-tee -a $NGINXCONFIG <<EOF
+  # Make nginx configuration file.
+  NGINXCONFIG="/etc/nginx/sites-available/$APPNAME"
+  rm $NGINXCONFIG
+
+  tee -a $NGINXCONFIG <<EOF
 ##
 # You should look at the following URL's in order to grasp a solid understanding
 # of Nginx configuration files in order to fully unleash the power of Nginx.
@@ -131,12 +140,119 @@ server {
 #}
 EOF
 
-# Change file permission for nginx.conf
-chmod 777 $NGINXCONFIG
+  # Change file permission for nginx.conf
+  chmod 777 $NGINXCONFIG
 
+  # Make symbolic link
+  ln -s $NGINXCONFIG /etc/nginx/sites-enabled/$APPNAME
 
-# Make symbolic link
-ln -s $NGINXCONFIG /etc/nginx/sites-enabled/$APPNAME
+  # Restart nginx service
+  systemctl restart nginx
+}
 
-# Restart nginx service
-systemctl restart nginx
+function config_vh_wp
+{
+    if [ -e "${WEBCF}" ] ; then
+        cat ${WEBCF} | grep "virtualhost wordpress" >/dev/null
+        if [ $? != 0 ] ; then
+            sed -i -e "s/adminEmails/adminEmails $ADMINEMAIL\n#adminEmails/" "${WEBCF}"
+            sed -i -e "s/ls_enabled/ls_enabled   1\n#/" "${WEBCF}"
+
+            VHOSTCONF=$SERVER_ROOT/conf/vhosts/wordpress/vhconf.conf
+
+            echo -e "Check existing port"
+            grep "address.*:${WPPORT}$\|${SSLWPPORT}$"  ${WEBCF} >/dev/null 2>&1
+            if [ ${?} = 0 ]; then
+                echo -e "Detect port ${WPPORT} || ${SSLWPPORT}, will skip domain setup!"
+            else
+                echo -e "Create wordpress listener"
+                cat >> ${WEBCF} <<END
+listener wordpress {
+    address                 *:$WPPORT
+    secure                  0
+    map                     wordpress $DOMAIN
+}
+listener wordpressssl {
+    address                 *:$SSLWPPORT
+    secure                  1
+    map                     wordpress $DOMAIN
+    keyFile                 $SERVER_ROOT/conf/$KEY
+    certFile                $SERVER_ROOT/conf/$CERT
+}
+END
+            fi
+
+            echo -e "Insert wordpress virtual host"
+            cat >> ${WEBCF} <<END
+virtualhost wordpress {
+    vhRoot                  $APPPATH
+    configFile              $VHOSTCONF
+    allowSymbolLink         1
+    enableScript            1
+    restrained              0
+    setUIDMode              2
+}
+END
+
+            echo -e "Create wordpress virtual host conf"
+            mkdir -p $SERVER_ROOT/conf/vhosts/wordpress/
+            cat > $VHOSTCONF <<END
+docRoot                   \$VH_ROOT/
+index  {
+    useServer               0
+    indexFiles              index.php
+}
+context / {
+    location                \$VH_ROOT
+    allowBrowse             1
+    indexFiles              index.php
+    rewrite  {
+        enable                1
+        inherit               1
+        rewriteFile           $APPPATH.htaccess
+    }
+}
+rewrite  {
+    enable                  1
+    autoLoadHtaccess        1
+}
+END
+            chown -R lsadm:lsadm $SERVER_ROOT/conf/
+        else
+            echo -e "Detect wordpress exist, will skip virtual host conf setup!"
+        fi
+    else
+        echo -e "${WEBCF} is missing. It appears that something went wrong during OpenLiteSpeed installation."
+    fi
+    echo -e 'End setup virtual host config'
+}
+
+function config_openlitespeed
+{
+    if [ -e "${WEBCF}" ] ; then
+        sed -i -e "s/8088/$WPPORT/" "${WEBCF}"
+
+        cat >> ${WEBCF} <<END
+listener Defaultssl {
+    address                 *:$SSLWPPORT
+    secure                  1
+    map                     Example *
+    keyFile                 $SERVER_ROOT/conf/$KEY
+    certFile                $SERVER_ROOT/conf/$CERT
+    }
+END
+        chown -R lsadm:lsadm $SERVER_ROOT/conf/
+    else
+        echo -e "${WEBCF} is missing. It appears that something went wrong during OpenLiteSpeed installation."
+    fi
+
+    systemctl stop lsws >/dev/null 2>&1
+    systemctl start lsws
+}
+
+if [[ "$WEBSERVER" == 'nginx' ]]; then
+    config_nginx
+else # Openlitespeed
+    config_vh_wp
+    config_openlitespeed
+fi

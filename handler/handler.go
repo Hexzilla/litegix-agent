@@ -1153,3 +1153,35 @@ func (h *ProfileHandler) InstallWordpress(c *gin.Context) {
 		"error": 0,
 	})
 }
+
+func (h *ProfileHandler) InstallSSL(c *gin.Context) {
+	mapToken := map[string]string{}
+	if err := c.ShouldBindJSON(&mapToken); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	domain := mapToken["domain"]
+	email := mapToken["email"]
+	log.Println(fmt.Sprintf("InstallSSL %s %s", domain, email))
+
+	if len(domain) <= 0 || len(email) <= 0 {
+		c.JSON(http.StatusUnprocessableEntity, "Invalid params")
+		return
+	}
+
+	cmd := fmt.Sprintf("/litegix/litegix-agent/inscert.sh %s %s", domain, email);
+	res := <-ExecuteCommandAsync(cmd)
+	if res.errcode != 0 {
+		c.JSON(http.StatusCreated, gin.H{
+			"error": res.errcode,
+			"msg": "Failed to install ssl",
+		})
+		return
+	}
+
+	// Success
+	c.JSON(http.StatusCreated, gin.H{
+		"error": 0,
+	})
+}

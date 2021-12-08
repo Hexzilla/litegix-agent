@@ -84,6 +84,7 @@ func main() {
 	router.GET("/services", /*middleware.TokenAuthMiddleware(),*/ service.ViewServices)
 
 	router.POST("/webapps/wordpress", /*middleware.TokenAuthMiddleware(),*/ service.InstallWordpress)
+	router.POST("/webapps/ssl", /*middleware.TokenAuthMiddleware(),*/ service.InstallSSL)
 
 	srv := &http.Server{
 		Addr:    ":21000",
