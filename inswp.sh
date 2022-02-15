@@ -43,6 +43,7 @@ sudo -u $USERNAME -i -- wp core config --path=$APPPATH --dbname=$DBNAME --dbuser
 
 sudo -u $USERNAME -i -- wp core install --path=$APPPATH --title="$TITLE" --url=$DOMAIN --admin_user=$ADMINUSER --admin_email=$ADMINEMAIL --admin_password=$ADMINPASS
 
+sudo chown -R www-data $APPPATH"wp-content/uploads"
 
 function config_nginx
 {
